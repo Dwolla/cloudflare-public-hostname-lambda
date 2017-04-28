@@ -1,7 +1,7 @@
 package com.dwolla.lambda.cloudflare.record
 
 import com.dwolla.awssdk.kms.KmsDecrypter
-import com.dwolla.cloudflare.model._
+import com.dwolla.cloudflare.domain.model._
 import com.dwolla.cloudflare.{CloudflareApiExecutor, CloudflareAuthorization, DnsRecordClient, DnsRecordIdDoesNotExistException}
 import com.dwolla.lambda.cloudformation.{CloudFormationCustomResourceRequest, HandlerResponse, MissingResourceProperties, ParsedCloudFormationCustomResourceRequestHandler}
 import org.json4s.{DefaultFormats, Formats, JValue}
@@ -13,7 +13,7 @@ import scala.language.{higherKinds, implicitConversions, postfixOps, reflectiveC
 
 class CloudflareDnsRecordHandler(implicit ec: ExecutionContext) extends ParsedCloudFormationCustomResourceRequestHandler {
   import Functor._
-  import com.dwolla.cloudflare.model.Implicits._
+  import com.dwolla.cloudflare.domain.model.Implicits._
 
   protected implicit val formats: Formats = DefaultFormats ++ org.json4s.ext.JodaTimeSerializers.all
   protected lazy val logger: Logger = LoggerFactory.getLogger("LambdaLogger")
@@ -32,7 +32,7 @@ class CloudflareDnsRecordHandler(implicit ec: ExecutionContext) extends ParsedCl
 
   override def handleRequest(input: CloudFormationCustomResourceRequest): Future[HandlerResponse] = {
     val resourceProperties = input.ResourceProperties.getOrElse(throw MissingResourceProperties)
-    val dnsRecord = parseDtoFrom(input.PhysicalResourceId, resourceProperties)
+    val dnsRecord = parseRecordFrom(resourceProperties)
 
     decryptCloudflareCredentials(resourceProperties).flatMap { implicit cloudflare ⇒
       input.RequestType.toUpperCase match {
@@ -52,15 +52,14 @@ class CloudflareDnsRecordHandler(implicit ec: ExecutionContext) extends ParsedCl
       .map(cloudFlareApiClient)
   }
 
-  private def parseDtoFrom(id: Option[String], resourceProperties: Map[String, JValue]) = {
+  private def parseRecordFrom(resourceProperties: Map[String, JValue]) = {
     val ttl: Option[String] = resourceProperties.get("TTL")
     val proxied: Option[String] = resourceProperties.get("Proxied")
 
-    DnsRecordDTO(
-      id = id,
+    UnidentifiedDnsRecord(
       name = resourceProperties("Name"),
       content = resourceProperties("Content"),
-      `type` = resourceProperties("Type"),
+      recordType = resourceProperties("Type"),
       ttl = ttl.map(_.toInt),
       proxied = proxied.map(_.toBoolean)
     )
@@ -70,19 +69,19 @@ class CloudflareDnsRecordHandler(implicit ec: ExecutionContext) extends ParsedCl
     promisedCloudflareApiExecutor.future.map(_.close())
   }
 
-  private def handleCreateOrUpdate(dnsRecordDto: DnsRecordDTO, cloudformationProvidedPhysicalResourceId: Option[String])
+  private def handleCreateOrUpdate(unidentifiedDnsRecord: UnidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId: Option[String])
                                   (implicit cloudflare: DnsRecordClient): Future[HandlerResponse] = {
 
     for {
-      existingRecord ← cloudflare.getExistingDnsRecord(dnsRecordDto.name)
+      existingRecord ← cloudflare.getExistingDnsRecord(unidentifiedDnsRecord.name)
       updateableId = existingRecord.map(_.physicalResourceId)
-      createOrUpdate ← updateableId.fold[Future[CreateOrUpdate[IdentifiedDnsRecord]]](cloudflare.createDnsRecord(dnsRecordDto).map(Create(_))) { physicalResourceId ⇒
-        val newRecordState = dnsRecordDto.identifyAs(physicalResourceId)
+      createOrUpdate ← updateableId.fold[Future[CreateOrUpdate[IdentifiedDnsRecord]]](cloudflare.createDnsRecord(unidentifiedDnsRecord).map(Create(_))) { physicalResourceId ⇒
+        val newRecordState = unidentifiedDnsRecord.identifyAs(physicalResourceId)
         assertRecordTypeWillNotChange(existingRecord.get.recordType, newRecordState.recordType)
         cloudflare.updateDnsRecord(newRecordState).map(Update(_))
       }
     } yield {
-      warnIfProvidedIdDoesNotMatchDiscoveredId(cloudformationProvidedPhysicalResourceId, updateableId, dnsRecordDto.name)
+      warnIfProvidedIdDoesNotMatchDiscoveredId(cloudformationProvidedPhysicalResourceId, updateableId, unidentifiedDnsRecord.name)
       warnIfNoIdWasProvidedButDnsRecordExisted(cloudformationProvidedPhysicalResourceId, existingRecord)
 
       val dnsRecord = createOrUpdate.value

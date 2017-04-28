@@ -2,7 +2,7 @@ package com.dwolla.lambda.cloudflare.record
 
 import com.amazonaws.services.kms.model.AWSKMSException
 import com.dwolla.awssdk.kms.KmsDecrypter
-import com.dwolla.cloudflare.model.{IdentifiedDnsRecord, UnidentifiedDnsRecord}
+import com.dwolla.cloudflare.domain.model.{IdentifiedDnsRecord, UnidentifiedDnsRecord}
 import com.dwolla.cloudflare.{CloudflareApiExecutor, DnsRecordClient, DnsRecordIdDoesNotExistException}
 import com.dwolla.lambda.cloudformation.{CloudFormationCustomResourceRequest, HandlerResponse}
 import com.dwolla.testutils.exceptions.NoStackTraceException
