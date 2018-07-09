@@ -2,7 +2,7 @@ package com.dwolla.cloudformation.cloudflare
 
 import com.amazonaws.regions.Regions._
 import com.amazonaws.services.cloudformation.AmazonCloudFormationAsyncClientBuilder
-import com.amazonaws.services.cloudformation.model.{ValidateTemplateRequest, ValidateTemplateResult}
+import com.amazonaws.services.cloudformation.model.ValidateTemplateRequest
 import com.dwolla.awssdk.utils.ScalaAsyncHandler.Implicits._
 import org.specs2.concurrent.ExecutionEnv
 import org.specs2.mutable.{After, Specification}
