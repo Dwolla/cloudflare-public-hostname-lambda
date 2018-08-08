@@ -8,7 +8,7 @@ An AWS CloudFormation custom resource that manages a Cloudflare DNS Record.
 To run all tests:
 
 ```ShellSession
-sbt clean 'test-only -- timefactor 10' 'stack/test-only -- timefactor 10' stack/it:test
+sbt clean 'testOnly -- timefactor 10' 'stack/testOnly -- timefactor 10' stack/it:test
 ```
 
 ## Deploy

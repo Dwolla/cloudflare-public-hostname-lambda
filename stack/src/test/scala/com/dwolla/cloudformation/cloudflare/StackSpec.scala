@@ -1,6 +1,6 @@
 package com.dwolla.cloudformation.cloudflare
 
-import com.dwolla.lambda.cloudflare.record.CustomResourceHandler
+import com.dwolla.lambda.cloudflare.record.CloudflareDnsRecordHandler
 import com.monsanto.arch.cloudformation.model._
 import com.monsanto.arch.cloudformation.model.resource._
 import org.specs2.matcher.ContainWithResult
@@ -55,7 +55,7 @@ class StackSpec extends Specification {
         ZipFile = None
       ),
       Description = Option("Creates or updates a public hostname at Cloudflare zone"),
-      Handler = classOf[CustomResourceHandler].getName,
+      Handler = classOf[CloudflareDnsRecordHandler].getName,
       Runtime = Java8,
       MemorySize = Some(512),
       Role = `Fn::GetAtt`(Seq(role.name, "Arn")),

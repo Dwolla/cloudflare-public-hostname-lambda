@@ -1,12 +1,14 @@
 language: scala
 
 scala:
-  - 2.12.1
+  - 2.12.6
 
 env:
-  - JDK=oraclejdk8
+  global:
+    - JDK=oraclejdk8
+    - AWS_REGION=us-west-2
 
 before_script:
   - jdk_switcher use $JDK
 
-script: sbt ++$TRAVIS_SCALA_VERSION clean stack/clean 'test-only -- timefactor 10' 'stack/test-only -- timefactor 10'
+script: sbt ++$TRAVIS_SCALA_VERSION clean stack/clean 'testOnly -- timefactor 10' 'stack/testOnly -- timefactor 10'
