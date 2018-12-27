@@ -10,6 +10,7 @@ import com.dwolla.testutils.exceptions.NoStackTraceException
 import _root_.io.circe._
 import _root_.io.circe.generic.auto._
 import _root_.io.circe.syntax._
+import com.dwolla.cloudflare.domain.model.Exceptions.RecordAlreadyExists
 import org.specs2.concurrent.ExecutionEnv
 import org.specs2.mock.Mockito
 import org.specs2.mutable.Specification
@@ -222,6 +223,57 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
           handlerResponse.physicalId must_== "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"
           handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
           handlerResponse.data must havePair("created" → expectedRecord.asJson)
+          handlerResponse.data must havePair("updated" → None.asJson)
+          handlerResponse.data must havePair("oldDnsRecord" → None.asJson)
+      }.await
+    }
+
+    "pretend to have created a DNS record that isn't an CNAME if Cloudflare complains that the record already exists" >> {
+      val inputRecord = UnidentifiedDnsRecord(
+        name = "example.dwolla.com",
+        content = "example.dwollalabs.com",
+        recordType = "MX",
+        ttl = Option(42),
+        proxied = Option(true),
+        priority = Option(10),
+      )
+      val expectedRecord = IdentifiedDnsRecord(
+        physicalResourceId = tagPhysicalResourceId("https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"),
+        zoneId = tagZoneId("fake-zone-id"),
+        resourceId = tagResourceId("fake-resource-id"),
+        name = "example.dwolla.com",
+        content = "example.dwollalabs.com",
+        recordType = "MX",
+        ttl = Option(42),
+        proxied = Option(true),
+        priority = Option(10),
+      )
+      val existingRecord = expectedRecord.copy(
+        physicalResourceId = tagPhysicalResourceId("https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/different-record"),
+        resourceId = tagResourceId("different-record"),
+        content = "different-content",
+        priority = Option(0),
+      )
+
+      val fakeCloudflareClient = new FakeDnsRecordClient {
+        override def createDnsRecord(record: UnidentifiedDnsRecord): Stream[IO, IdentifiedDnsRecord] =
+          if (record == inputRecord) Stream.raiseError(RecordAlreadyExists)
+          else Stream.raiseError(new RuntimeException(s"unexpected argument: $record"))
+
+        override def getExistingDnsRecords(name: String,
+                                           content: Option[String],
+                                           recordType: Option[String]) =
+          if (name == existingRecord.name) Stream.emit(existingRecord)
+          else Stream.raiseError(new RuntimeException(s"unexpected arguments: ($name, $content, $recordType)"))
+      }
+
+      val output = UpdateCloudflare(fakeCloudflareClient)("CrEaTe", inputRecord, None)
+
+      output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
+        case List(handlerResponse) ⇒
+          handlerResponse.physicalId must_== existingRecord.physicalResourceId
+          handlerResponse.data must havePair("dnsRecord" → existingRecord.asJson)
+          handlerResponse.data must havePair("created" → existingRecord.asJson)
           handlerResponse.data must havePair("updated" → None.asJson)
           handlerResponse.data must havePair("oldDnsRecord" → None.asJson)
       }.await
