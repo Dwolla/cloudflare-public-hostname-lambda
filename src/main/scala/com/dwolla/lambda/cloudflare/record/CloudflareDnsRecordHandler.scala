@@ -98,7 +98,7 @@ object UpdateCloudflare {
   private def handleDelete(physicalResourceId: String)
                           (implicit cloudflare: DnsRecordClient[IO]): Stream[IO, HandlerResponse] = {
     for {
-      existingRecord ← cloudflare.getExistingDnsRecord(physicalResourceId)
+      existingRecord ← cloudflare.getByUri(physicalResourceId)
       deleted ← cloudflare.deleteDnsRecord(existingRecord.physicalResourceId)
     } yield {
       val data = Map(
@@ -117,7 +117,7 @@ object UpdateCloudflare {
   private def handleCreateOrUpdateNonCNAME(unidentifiedDnsRecord: UnidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId: Stream[IO, String])
                                           (implicit cloudflare: DnsRecordClient[IO]): Stream[IO, HandlerResponse] = {
     for {
-      maybeExistingRecord ← cloudformationProvidedPhysicalResourceId.flatMap(cloudflare.getExistingDnsRecord).last
+      maybeExistingRecord ← cloudformationProvidedPhysicalResourceId.flatMap(cloudflare.getByUri).last
       createOrUpdate ← maybeExistingRecord.fold(createRecord)(updateRecord).run(unidentifiedDnsRecord)
     } yield createOrUpdateToHandlerResponse(createOrUpdate, maybeExistingRecord)
   }
