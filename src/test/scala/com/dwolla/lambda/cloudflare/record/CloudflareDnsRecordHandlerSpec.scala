@@ -10,14 +10,18 @@ import com.dwolla.testutils.exceptions.NoStackTraceException
 import _root_.io.circe._
 import _root_.io.circe.generic.auto._
 import _root_.io.circe.syntax._
+import com.dwolla.cloudflare.domain.model.Exceptions.RecordAlreadyExists
 import org.specs2.concurrent.ExecutionEnv
 import org.specs2.mock.Mockito
 import org.specs2.mutable.Specification
 import com.dwolla.fs2aws.kms._
 import com.dwolla.lambda.cloudflare.record.UpdateCloudflare.DnsRecordTypeChange
 
-
 class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with Mockito {
+
+  private val tagPhysicalResourceId = shapeless.tag[PhysicalResourceIdTag][String] _
+  private val tagZoneId = shapeless.tag[ZoneIdTag][String] _
+  private val tagResourceId = shapeless.tag[ResourceIdTag][String] _
 
   "CloudflareDnsRecordHandler" should {
     "propagate exceptions thrown by the KMS decrypter" >> {
@@ -57,9 +61,9 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
         proxied = Option(true)
       )
       val expectedRecord = IdentifiedDnsRecord(
-        physicalResourceId = "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id",
-        zoneId = "fake-zone-id",
-        resourceId = "fake-resource-id",
+        physicalResourceId = tagPhysicalResourceId("https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"),
+        zoneId = tagZoneId("fake-zone-id"),
+        resourceId = tagResourceId("fake-resource-id"),
         name = "example.dwolla.com",
         content = "example.dwollalabs.com",
         recordType = "CNAME",
@@ -81,8 +85,8 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
 
       val output = UpdateCloudflare(fakeCloudflareClient)("CrEaTe", inputRecord, None)
 
-      output.compile.toList.map(_.head).unsafeToFuture() must beLike[HandlerResponse] {
-        case handlerResponse ⇒
+      output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
+        case List(handlerResponse) ⇒
           handlerResponse.physicalId must_== "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"
           handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
           handlerResponse.data must havePair("created" → expectedRecord.asJson)
@@ -148,9 +152,9 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
         proxied = Option(true)
       )
       val expectedRecord = IdentifiedDnsRecord(
-        physicalResourceId = "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id",
-        zoneId = "fake-zone-id",
-        resourceId = "fake-resource-id",
+        physicalResourceId = tagPhysicalResourceId("https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"),
+        zoneId = tagZoneId("fake-zone-id"),
+        resourceId = tagResourceId("fake-resource-id"),
         name = "example.dwolla.com",
         content = "example.dwollalabs.com",
         recordType = "CNAME",
@@ -172,8 +176,8 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
 
       val output = UpdateCloudflare(fakeCloudflareClient)("update", inputRecord, providedPhysicalId)
 
-      output.compile.toList.map(_.head).unsafeToFuture() must beLike[HandlerResponse] {
-        case handlerResponse ⇒
+      output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
+        case List(handlerResponse) ⇒
           handlerResponse.physicalId must_== expectedRecord.physicalResourceId
           handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
           handlerResponse.data must havePair("oldDnsRecord" → None.asJson)
@@ -190,9 +194,53 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
         priority = Option(10),
       )
       val expectedRecord = IdentifiedDnsRecord(
-        physicalResourceId = "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id",
-        zoneId = "fake-zone-id",
-        resourceId = "fake-resource-id",
+        physicalResourceId = tagPhysicalResourceId("https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"),
+        zoneId = tagZoneId("fake-zone-id"),
+        resourceId = tagResourceId("fake-resource-id"),
+        name = "example.dwolla.com",
+        content = "example.dwollalabs.com",
+        recordType = "MX",
+        ttl = Option(42),
+        proxied = Option(true),
+        priority = Option(10),
+      )
+
+      val fakeCloudflareClient = new FakeDnsRecordClient {
+        override def createDnsRecord(record: UnidentifiedDnsRecord): Stream[IO, IdentifiedDnsRecord] =
+          if (record == inputRecord) Stream.emit(expectedRecord)
+          else Stream.raiseError(new RuntimeException(s"unexpected argument: $record"))
+
+        override def getExistingDnsRecords(name: String,
+                                           content: Option[String],
+                                           recordType: Option[String]) =
+          Stream.raiseError(new RuntimeException(s"unexpected arguments: ($name, $content, $recordType)"))
+      }
+
+      val output = UpdateCloudflare(fakeCloudflareClient)("CrEaTe", inputRecord, None)
+
+      output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
+        case List(handlerResponse) ⇒
+          handlerResponse.physicalId must_== "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"
+          handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
+          handlerResponse.data must havePair("created" → expectedRecord.asJson)
+          handlerResponse.data must havePair("updated" → None.asJson)
+          handlerResponse.data must havePair("oldDnsRecord" → None.asJson)
+      }.await
+    }
+
+    "pretend to have created a DNS record that isn't an CNAME if Cloudflare complains that the record already exists" >> {
+      val inputRecord = UnidentifiedDnsRecord(
+        name = "example.dwolla.com",
+        content = "example.dwollalabs.com",
+        recordType = "MX",
+        ttl = Option(42),
+        proxied = Option(true),
+        priority = Option(10),
+      )
+      val expectedRecord = IdentifiedDnsRecord(
+        physicalResourceId = tagPhysicalResourceId("https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"),
+        zoneId = tagZoneId("fake-zone-id"),
+        resourceId = tagResourceId("fake-resource-id"),
         name = "example.dwolla.com",
         content = "example.dwollalabs.com",
         recordType = "MX",
@@ -201,15 +249,15 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
         priority = Option(10),
       )
       val existingRecord = expectedRecord.copy(
-        physicalResourceId = "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/different-record",
-        resourceId = "different-record",
+        physicalResourceId = tagPhysicalResourceId("https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/different-record"),
+        resourceId = tagResourceId("different-record"),
         content = "different-content",
         priority = Option(0),
       )
 
       val fakeCloudflareClient = new FakeDnsRecordClient {
         override def createDnsRecord(record: UnidentifiedDnsRecord): Stream[IO, IdentifiedDnsRecord] =
-          if (record == inputRecord) Stream.emit(expectedRecord)
+          if (record == inputRecord) Stream.raiseError(RecordAlreadyExists)
           else Stream.raiseError(new RuntimeException(s"unexpected argument: $record"))
 
         override def getExistingDnsRecords(name: String,
@@ -221,11 +269,11 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
 
       val output = UpdateCloudflare(fakeCloudflareClient)("CrEaTe", inputRecord, None)
 
-      output.compile.toList.map(_.head).unsafeToFuture() must beLike[HandlerResponse] {
-        case handlerResponse ⇒
-          handlerResponse.physicalId must_== "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"
-          handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
-          handlerResponse.data must havePair("created" → expectedRecord.asJson)
+      output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
+        case List(handlerResponse) ⇒
+          handlerResponse.physicalId must_== existingRecord.physicalResourceId
+          handlerResponse.data must havePair("dnsRecord" → existingRecord.asJson)
+          handlerResponse.data must havePair("created" → existingRecord.asJson)
           handlerResponse.data must havePair("updated" → None.asJson)
           handlerResponse.data must havePair("oldDnsRecord" → None.asJson)
       }.await
@@ -245,9 +293,9 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
         priority = Option(10),
       )
       val existingRecord = IdentifiedDnsRecord(
-        physicalResourceId = physicalResourceId,
-        zoneId = "fake-zone-id",
-        resourceId = "fake-resource-id",
+        physicalResourceId = tagPhysicalResourceId(physicalResourceId),
+        zoneId = tagZoneId("fake-zone-id"),
+        resourceId = tagResourceId("fake-resource-id"),
         name = "example.dwolla.com",
         content = "example.dwollalabs.com",
         recordType = "MX",
@@ -263,15 +311,15 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
           if (record == inputRecord.identifyAs(physicalResourceId)) Stream.emit(expectedRecord)
           else Stream.raiseError(new RuntimeException(s"unexpected argument: $record"))
 
-        override def getExistingDnsRecord(physicalResourceId: String) =
+        override def getByUri(uri: String) =
           if (physicalResourceId == existingRecord.physicalResourceId) Stream.emit(existingRecord)
           else Stream.raiseError(new RuntimeException(s"unexpected arguments: ($physicalResourceId)"))
       }
 
       val output = UpdateCloudflare(fakeCloudflareClient)("update", inputRecord, Option(physicalResourceId))
 
-      output.compile.toList.map(_.head).unsafeToFuture() must beLike[HandlerResponse] {
-        case handlerResponse ⇒
+      output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
+        case List(handlerResponse) ⇒
           handlerResponse.physicalId must_== expectedRecord.physicalResourceId
           handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
           handlerResponse.data must havePair("oldDnsRecord" → existingRecord.asJson)
@@ -291,9 +339,9 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
         proxied = Option(true),
       )
       val existingRecord = IdentifiedDnsRecord(
-        physicalResourceId = physicalResourceId,
-        zoneId = "fake-zone-id",
-        resourceId = "fake-resource-id",
+        physicalResourceId = tagPhysicalResourceId(physicalResourceId),
+        zoneId = tagZoneId("fake-zone-id"),
+        resourceId = tagResourceId("fake-resource-id"),
         name = "example.dwolla.com",
         content = "example.dwollalabs.com",
         recordType = "CNAME",
@@ -317,8 +365,8 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
 
       val output = UpdateCloudflare(fakeCloudflareClient)("CrEaTe", inputRecord, Option(physicalResourceId))
 
-      output.compile.toList.map(_.head).unsafeToFuture() must beLike[HandlerResponse] {
-        case handlerResponse ⇒
+      output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
+        case List(handlerResponse) ⇒
           handlerResponse.physicalId must_== expectedRecord.physicalResourceId
           handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
           handlerResponse.data must havePair("oldDnsRecord" → existingRecord.asJson)
@@ -330,9 +378,9 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
     "update a CNAME DNS record if it already exists, even if the physical ID passed in by CloudFormation doesn't match the existing ID (returning the new ID)" >> {
       val physicalResourceId = "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"
       val existingRecord = IdentifiedDnsRecord(
-        physicalResourceId = physicalResourceId,
-        zoneId = "fake-zone-id",
-        resourceId = "fake-resource-id",
+        physicalResourceId = tagPhysicalResourceId(physicalResourceId),
+        zoneId = tagZoneId("fake-zone-id"),
+        resourceId = tagResourceId("fake-resource-id"),
         name = "example.dwolla.com",
         content = "example.dwollalabs.com",
         recordType = "CNAME",
@@ -356,8 +404,8 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
 
       val output = UpdateCloudflare(fakeCloudflareClient)("update", inputRecord, Option(physicalResourceId))
 
-      output.compile.toList.map(_.head).unsafeToFuture() must beLike[HandlerResponse] {
-        case handlerResponse ⇒
+      output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
+        case List(handlerResponse) ⇒
           handlerResponse.physicalId must_== expectedRecord.physicalResourceId
           handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
           handlerResponse.data must havePair("oldDnsRecord" → existingRecord.asJson)
@@ -372,9 +420,9 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val physicalResourceId = "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"
 
       val existingRecord = IdentifiedDnsRecord(
-        physicalResourceId = physicalResourceId,
-        zoneId = "fake-zone-id",
-        resourceId = "fake-resource-id",
+        physicalResourceId = tagPhysicalResourceId(physicalResourceId),
+        zoneId = tagZoneId("fake-zone-id"),
+        resourceId = tagResourceId("fake-resource-id"),
         name = "example.dwolla.com",
         content = "example.dwollalabs.com",
         recordType = "A",
@@ -404,9 +452,9 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val physicalResourceId = "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"
 
       val existingRecord = IdentifiedDnsRecord(
-        physicalResourceId = physicalResourceId,
-        zoneId = "fake-zone-id",
-        resourceId = "fake-resource-id",
+        physicalResourceId = tagPhysicalResourceId(physicalResourceId),
+        zoneId = tagZoneId("fake-zone-id"),
+        resourceId = tagResourceId("fake-resource-id"),
         name = "example.dwolla.com",
         content = "example.dwollalabs.com",
         recordType = "MX",
@@ -416,7 +464,8 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val inputRecord = existingRecord.unidentify.copy(content = "new text", recordType = "TXT")
 
       val fakeCloudflareClient = new FakeDnsRecordClient {
-        override def getExistingDnsRecord(physicalResourceId: String) = Stream.emit(existingRecord)
+        override def getByUri(uri: String) =
+          Stream.emit(existingRecord)
       }
 
       val output = UpdateCloudflare(fakeCloudflareClient)("update", inputRecord, Option(physicalResourceId))
@@ -431,9 +480,9 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
     "propagate the failure exception if update fails" >> {
       val physicalResourceId = "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"
       val existingRecord = IdentifiedDnsRecord(
-        physicalResourceId = physicalResourceId,
-        zoneId = "fake-zone-id",
-        resourceId = "fake-resource-id",
+        physicalResourceId = tagPhysicalResourceId(physicalResourceId),
+        zoneId = tagZoneId("fake-zone-id"),
+        resourceId = tagResourceId("fake-resource-id"),
         name = "example.dwolla.com",
         content = "example.dwollalabs.com",
         recordType = "CNAME",
@@ -472,17 +521,17 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val existingRecord = inputRecord.identifyAs(physicalResourceId)
 
       val fakeDnsRecordClient = new FakeDnsRecordClient {
-        override def getExistingDnsRecord(physicalResourceId: String) =
+        override def getByUri(uri: String) =
           Stream.emit(existingRecord)
 
         override def deleteDnsRecord(physicalResourceId: String) =
-          Stream.emit(physicalResourceId)
+          Stream.emit(physicalResourceId).map(tagPhysicalResourceId)
       }
 
       val output = UpdateCloudflare(fakeDnsRecordClient)("delete", inputRecord, Option(physicalResourceId))
 
-      output.compile.toList.map(_.head).unsafeToFuture() must beLike[HandlerResponse] {
-        case handlerResponse ⇒
+      output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
+        case List(handlerResponse) ⇒
           handlerResponse.physicalId must_== physicalResourceId
           handlerResponse.data must havePair("deletedRecordId" → physicalResourceId.asJson)
       }.await
@@ -499,7 +548,7 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       )
 
       val fakeDnsRecordClient = new FakeDnsRecordClient {
-        override def getExistingDnsRecord(physicalResourceId: String) =
+        override def getByUri(uri: String) =
           Stream.empty
 
         override def deleteDnsRecord(physicalResourceId: String) =
@@ -508,8 +557,8 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
 
       val output = UpdateCloudflare(fakeDnsRecordClient)("delete", inputRecord, Option(physicalResourceId))
 
-      output.compile.toList.map(_.head).unsafeToFuture() must beLike[HandlerResponse] {
-        case handlerResponse ⇒
+      output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
+        case List(handlerResponse) ⇒
           handlerResponse.physicalId must_== physicalResourceId
           handlerResponse.data must not(havePair("deletedRecordId" → physicalResourceId))
       }.await
@@ -530,7 +579,7 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       )
 
       val fakeDnsRecordClient = new FakeDnsRecordClient {
-        override def getExistingDnsRecord(physicalResourceId: String) =
+        override def getByUri(uri: String) =
           Stream.emit(inputRecord.identifyAs(physicalResourceId))
 
         override def deleteDnsRecord(physicalResourceId: String) =
@@ -577,13 +626,11 @@ abstract class FakeDnsRecordClient extends DnsRecordClient[IO] {
 
   override def updateDnsRecord(record: IdentifiedDnsRecord): Stream[IO, IdentifiedDnsRecord] = Stream.raiseError(new NotImplementedError())
 
-  override def getExistingDnsRecord(physicalResourceId: String): Stream[IO, IdentifiedDnsRecord] = Stream.raiseError(new NotImplementedError())
-
   override def getExistingDnsRecords(name: String,
                                      content: Option[String],
                                      recordType: Option[String]): Stream[IO, IdentifiedDnsRecord] = Stream.raiseError(new NotImplementedError())
 
-  override def deleteDnsRecord(physicalResourceId: String): Stream[IO, String] = Stream.raiseError(new NotImplementedError())
+  override def getById(zoneId: ZoneId, resourceId: ResourceId): Stream[IO, IdentifiedDnsRecord] = Stream.raiseError(new NotImplementedError())
 
-  override def getZoneId(domain: String): Stream[IO, String] = Stream.raiseError(new NotImplementedError())
+  override def deleteDnsRecord(physicalResourceId: String): Stream[IO, PhysicalResourceId] = Stream.raiseError(new NotImplementedError())
 }

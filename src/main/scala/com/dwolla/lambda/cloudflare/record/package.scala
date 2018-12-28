@@ -2,8 +2,12 @@ package com.dwolla.lambda.cloudflare
 
 import com.dwolla.cloudflare.domain.model.UnidentifiedDnsRecord
 import io.circe._
+import shapeless.tag.@@
+import cats.syntax.contravariant._
 
 package object record {
+  implicit def TaggedStringEncoder[B]: Encoder[String @@ B] = Encoder[String].narrow
+
   implicit val decodeUnidentifiedDnsRecord: Decoder[UnidentifiedDnsRecord] = (c: HCursor) ⇒
     for {
       name ← c.downField("Name").as[String]

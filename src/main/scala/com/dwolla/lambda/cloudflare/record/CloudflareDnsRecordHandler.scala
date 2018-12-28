@@ -9,6 +9,7 @@ import cats.data._
 import cats.effect._
 import cats.implicits._
 import com.dwolla.cloudflare._
+import com.dwolla.cloudflare.domain.model.Exceptions.RecordAlreadyExists
 import com.dwolla.cloudflare.domain.model._
 import com.dwolla.fs2aws.kms.KmsDecrypter
 import com.dwolla.lambda.cloudflare.record.CloudflareDnsRecordHandler.parseRecordFrom
@@ -98,7 +99,7 @@ object UpdateCloudflare {
   private def handleDelete(physicalResourceId: String)
                           (implicit cloudflare: DnsRecordClient[IO]): Stream[IO, HandlerResponse] = {
     for {
-      existingRecord ← cloudflare.getExistingDnsRecord(physicalResourceId)
+      existingRecord ← cloudflare.getByUri(physicalResourceId)
       deleted ← cloudflare.deleteDnsRecord(existingRecord.physicalResourceId)
     } yield {
       val data = Map(
@@ -117,7 +118,7 @@ object UpdateCloudflare {
   private def handleCreateOrUpdateNonCNAME(unidentifiedDnsRecord: UnidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId: Stream[IO, String])
                                           (implicit cloudflare: DnsRecordClient[IO]): Stream[IO, HandlerResponse] = {
     for {
-      maybeExistingRecord ← cloudformationProvidedPhysicalResourceId.flatMap(cloudflare.getExistingDnsRecord).last
+      maybeExistingRecord ← cloudformationProvidedPhysicalResourceId.flatMap(cloudflare.getByUri).last
       createOrUpdate ← maybeExistingRecord.fold(createRecord)(updateRecord).run(unidentifiedDnsRecord)
     } yield createOrUpdateToHandlerResponse(createOrUpdate, maybeExistingRecord)
   }
@@ -142,10 +143,17 @@ object UpdateCloudflare {
       _ ← warnIfNoIdWasProvidedButDnsRecordExisted(cloudformationProvidedPhysicalResourceId, maybeIdentifiedDnsRecord)
     } yield createOrUpdateToHandlerResponse(createOrUpdate, maybeIdentifiedDnsRecord)
 
+  /*_*/
   private def createRecord(implicit cloudflare: DnsRecordClient[IO]): Kleisli[Stream[IO, ?], UnidentifiedDnsRecord, CreateOrUpdate[IdentifiedDnsRecord]] =
-    for {
-      identifiedRecord ← Kleisli[Stream[IO, ?], UnidentifiedDnsRecord, IdentifiedDnsRecord](unidentifiedDnsRecord ⇒ cloudflare.createDnsRecord(unidentifiedDnsRecord))
-    } yield Create(identifiedRecord)
+    Kleisli { unidentifiedDnsRecord =>
+      for {
+        identifiedRecord <- cloudflare.createDnsRecord(unidentifiedDnsRecord).recoverWith {
+          case RecordAlreadyExists =>
+            cloudflare.getExistingDnsRecords(unidentifiedDnsRecord.name, Option(unidentifiedDnsRecord.content), Option(unidentifiedDnsRecord.recordType))
+        }
+      } yield Create(identifiedRecord)
+    }
+  /*_*/
 
   private def updateRecord(existingRecord: IdentifiedDnsRecord)(implicit cloudflare: DnsRecordClient[IO]): Kleisli[Stream[IO, ?], UnidentifiedDnsRecord, CreateOrUpdate[IdentifiedDnsRecord]] =
     for {
@@ -184,11 +192,12 @@ object UpdateCloudflare {
 
   /*_*/
   private def assertRecordTypeWillNotChange(existingRecordType: String): Kleisli[Stream[IO, ?], UnidentifiedDnsRecord, UnidentifiedDnsRecord] =
-    Kleisli(unidentifiedDnsRecord ⇒
+    Kleisli { unidentifiedDnsRecord =>
       if (unidentifiedDnsRecord.recordType == existingRecordType)
         Stream.emit(unidentifiedDnsRecord)
       else
-        Stream.raiseError(DnsRecordTypeChange(existingRecordType, unidentifiedDnsRecord.recordType)))
+        Stream.raiseError(DnsRecordTypeChange(existingRecordType, unidentifiedDnsRecord.recordType))
+    }
   /*_*/
 
   case class DnsRecordTypeChange(existingRecordType: String, newRecordType: String)
