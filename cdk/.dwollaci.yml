@@ -1,0 +1,50 @@
+stages:
+  build:
+    nodeLabel: jetstream
+    steps:
+      - make --directory tasks all
+      - ENVIRONMENT=Admin make --directory tasks common/docker/jenkins/ref/jenkins.yml
+      - make --directory stack jenkins-build
+    filesToStash:
+      - common/docker/**
+      - stack/Berksfile
+      - stack/Berksfile.lock
+      - stack/Makefile
+      - stack/stack.json
+      - stack/policies/**
+      - stack/docker-compose.yml
+      - stack/bootstrap.sh
+      - tasks/**
+  prepublish:
+    nodeLabel: chef-deployer
+    steps:
+      - make --directory stack jenkins-prepublish
+  dockerPublish:
+    dockerImages:
+      - imageName: jenkins
+        dockerfile: common/docker/Dockerfile
+        context: .
+        buildArgs:
+          VCS_REF: '{{GIT_COMMIT}}'
+          VCS_URL: '{{GIT_URL}}'
+          BUILD_DATE: '{{DATE}}'
+          VERSION: '{{GIT_COMMIT}}'
+          JENKINS_VERSION: "2.387.1"
+        destinations:
+          - registry: docker.dwolla.net/dwolla
+            tags:
+              - '{{GIT_COMMIT}}'
+              - latest
+  deployProd:
+    nodeLabel: jetstream-deployer
+    steps:
+      - ENVIRONMENT=Admin make --directory tasks deploy
+      - |
+        cd stack && \
+        jetstream provision \
+        --revision $GIT_COMMIT \
+        --environment Admin \
+        --region us-west-2 \
+        --config ./stack.json \
+        --skip-waiting \
+        --volume-id vol-09fa6d8bed5eac248
