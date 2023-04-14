@@ -1,10 +1,3 @@
-addSbtPlugin("com.dwolla.sbt" %% "sbt-s3-publisher" % "1.2.0")
-addSbtPlugin("com.dwolla.sbt" %% "sbt-cloudformation-stack" % "1.2.2")
-addSbtPlugin("com.dwolla.sbt" %% "sbt-dwolla-base" % "1.2.0")
-addSbtPlugin("com.dwijnand" % "sbt-travisci" % "1.1.1")
-addSbtPlugin("com.dwolla" % "sbt-assembly-log4j2" % "1.0.0-0e5d5dd98c4c1e12ff7134536456679069c13e4d")
-
-resolvers ++= Seq(
-  Resolver.bintrayIvyRepo("dwolla", "sbt-plugins"),
-  Resolver.bintrayRepo("dwolla", "maven")
-)
+addSbtPlugin("io.github.davidgregory084" % "sbt-tpolecat" % "0.4.2")
+addSbtPlugin("com.codecommit" % "sbt-github-actions" % "0.14.2")
+addSbtPlugin("com.github.sbt" % "sbt-native-packager" % "1.9.9")
