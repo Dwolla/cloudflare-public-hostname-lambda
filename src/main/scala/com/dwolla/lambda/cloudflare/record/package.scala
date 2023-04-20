@@ -8,13 +8,13 @@ import cats.syntax.contravariant._
 package object record {
   implicit def TaggedStringEncoder[B]: Encoder[String @@ B] = Encoder[String].narrow
 
-  implicit val decodeUnidentifiedDnsRecord: Decoder[UnidentifiedDnsRecord] = (c: HCursor) ⇒
+  implicit val decodeUnidentifiedDnsRecord: Decoder[UnidentifiedDnsRecord] = (c: HCursor) =>
     for {
-      name ← c.downField("Name").as[String]
-      content ← c.downField("Content").as[String]
-      recordType ← c.downField("Type").as[String]
-      ttl ← c.downField("TTL").as[Option[Int]]
-      proxied ← c.downField("Proxied").as[Option[String]].map(_.flatMap(str ⇒ try { Some(str.toBoolean) } catch { case _: IllegalArgumentException ⇒ None }))
-      priority ← c.downField("Priority").as[Option[Int]]
+      name <- c.downField("Name").as[String]
+      content <- c.downField("Content").as[String]
+      recordType <- c.downField("Type").as[String]
+      ttl <- c.downField("TTL").as[Option[Int]]
+      proxied <- c.downField("Proxied").as[Option[String]].map(_.flatMap(str => try { Some(str.toBoolean) } catch { case _: IllegalArgumentException => None }))
+      priority <- c.downField("Priority").as[Option[Int]]
     } yield UnidentifiedDnsRecord(name, content, recordType, ttl, proxied, priority)
 }

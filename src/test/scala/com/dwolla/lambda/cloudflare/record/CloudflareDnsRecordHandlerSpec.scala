@@ -34,19 +34,19 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
         requestType = "update",
         physicalResourceId = Option("different-physical-id"),
         resourceProperties = Option(Map(
-          "Name" → Json.fromString("example.dwolla.com"),
-          "Content" → Json.fromString("new-example.dwollalabs.com"),
-          "Type" → Json.fromString("CNAME"),
-          "TTL" → Json.fromString("42"),
-          "Proxied" → Json.fromString("true"),
-          "CloudflareEmail" → Json.fromString("cloudflare-account-email@dwollalabs.com"),
-          "CloudflareKey" → Json.fromString("fake-key")
+          "Name" -> Json.fromString("example.dwolla.com"),
+          "Content" -> Json.fromString("new-example.dwollalabs.com"),
+          "Type" -> Json.fromString("CNAME"),
+          "TTL" -> Json.fromString("42"),
+          "Proxied" -> Json.fromString("true"),
+          "CloudflareEmail" -> Json.fromString("cloudflare-account-email@dwollalabs.com"),
+          "CloudflareKey" -> Json.fromString("fake-key")
         ))
       )
 
       val output = handler.handleRequest(request).unsafeToFuture()
 
-      output must throwA[AWSKMSException].like { case ex ⇒ ex.getMessage must startWith(kmsExceptionMessage) }.await
+      output must throwA[AWSKMSException].like { case ex => ex.getMessage must startWith(kmsExceptionMessage) }.await
     }
   }
 
@@ -86,12 +86,12 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val output = UpdateCloudflare(fakeCloudflareClient)("CrEaTe", inputRecord, None)
 
       output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
-        case List(handlerResponse) ⇒
+        case List(handlerResponse) =>
           handlerResponse.physicalId must_== "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"
-          handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
-          handlerResponse.data must havePair("created" → expectedRecord.asJson)
-          handlerResponse.data must havePair("updated" → None.asJson)
-          handlerResponse.data must havePair("oldDnsRecord" → None.asJson)
+          handlerResponse.data must havePair("dnsRecord" -> expectedRecord.asJson)
+          handlerResponse.data must havePair("created" -> expectedRecord.asJson)
+          handlerResponse.data must havePair("updated" -> None.asJson)
+          handlerResponse.data must havePair("oldDnsRecord" -> None.asJson)
       }.await
     }
 
@@ -177,10 +177,10 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val output = UpdateCloudflare(fakeCloudflareClient)("update", inputRecord, providedPhysicalId)
 
       output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
-        case List(handlerResponse) ⇒
+        case List(handlerResponse) =>
           handlerResponse.physicalId must_== expectedRecord.physicalResourceId
-          handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
-          handlerResponse.data must havePair("oldDnsRecord" → None.asJson)
+          handlerResponse.data must havePair("dnsRecord" -> expectedRecord.asJson)
+          handlerResponse.data must havePair("oldDnsRecord" -> None.asJson)
       }.await
     }
 
@@ -219,12 +219,12 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val output = UpdateCloudflare(fakeCloudflareClient)("CrEaTe", inputRecord, None)
 
       output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
-        case List(handlerResponse) ⇒
+        case List(handlerResponse) =>
           handlerResponse.physicalId must_== "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id"
-          handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
-          handlerResponse.data must havePair("created" → expectedRecord.asJson)
-          handlerResponse.data must havePair("updated" → None.asJson)
-          handlerResponse.data must havePair("oldDnsRecord" → None.asJson)
+          handlerResponse.data must havePair("dnsRecord" -> expectedRecord.asJson)
+          handlerResponse.data must havePair("created" -> expectedRecord.asJson)
+          handlerResponse.data must havePair("updated" -> None.asJson)
+          handlerResponse.data must havePair("oldDnsRecord" -> None.asJson)
       }.await
     }
 
@@ -270,12 +270,12 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val output = UpdateCloudflare(fakeCloudflareClient)("CrEaTe", inputRecord, None)
 
       output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
-        case List(handlerResponse) ⇒
+        case List(handlerResponse) =>
           handlerResponse.physicalId must_== existingRecord.physicalResourceId
-          handlerResponse.data must havePair("dnsRecord" → existingRecord.asJson)
-          handlerResponse.data must havePair("created" → existingRecord.asJson)
-          handlerResponse.data must havePair("updated" → None.asJson)
-          handlerResponse.data must havePair("oldDnsRecord" → None.asJson)
+          handlerResponse.data must havePair("dnsRecord" -> existingRecord.asJson)
+          handlerResponse.data must havePair("created" -> existingRecord.asJson)
+          handlerResponse.data must havePair("updated" -> None.asJson)
+          handlerResponse.data must havePair("oldDnsRecord" -> None.asJson)
       }.await
     }
   }
@@ -319,10 +319,10 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val output = UpdateCloudflare(fakeCloudflareClient)("update", inputRecord, Option(physicalResourceId))
 
       output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
-        case List(handlerResponse) ⇒
+        case List(handlerResponse) =>
           handlerResponse.physicalId must_== expectedRecord.physicalResourceId
-          handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
-          handlerResponse.data must havePair("oldDnsRecord" → existingRecord.asJson)
+          handlerResponse.data must havePair("dnsRecord" -> expectedRecord.asJson)
+          handlerResponse.data must havePair("oldDnsRecord" -> existingRecord.asJson)
       }.await
 
       // TODO deal with logging
@@ -366,10 +366,10 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val output = UpdateCloudflare(fakeCloudflareClient)("CrEaTe", inputRecord, Option(physicalResourceId))
 
       output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
-        case List(handlerResponse) ⇒
+        case List(handlerResponse) =>
           handlerResponse.physicalId must_== expectedRecord.physicalResourceId
-          handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
-          handlerResponse.data must havePair("oldDnsRecord" → existingRecord.asJson)
+          handlerResponse.data must havePair("dnsRecord" -> expectedRecord.asJson)
+          handlerResponse.data must havePair("oldDnsRecord" -> existingRecord.asJson)
       }.await
 
 //      there was one(mockLogger).warn(startsWith("""Discovered DNS record ID "https://api.cloudflare.com/client/v4/zones/fake-zone-id/dns_records/fake-resource-id" for hostname "example.dwolla.com""""))
@@ -405,10 +405,10 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val output = UpdateCloudflare(fakeCloudflareClient)("update", inputRecord, Option(physicalResourceId))
 
       output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
-        case List(handlerResponse) ⇒
+        case List(handlerResponse) =>
           handlerResponse.physicalId must_== expectedRecord.physicalResourceId
-          handlerResponse.data must havePair("dnsRecord" → expectedRecord.asJson)
-          handlerResponse.data must havePair("oldDnsRecord" → existingRecord.asJson)
+          handlerResponse.data must havePair("dnsRecord" -> expectedRecord.asJson)
+          handlerResponse.data must havePair("oldDnsRecord" -> existingRecord.asJson)
       }.await
 
       // TODO deal with logging
@@ -442,7 +442,7 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val output = UpdateCloudflare(fakeCloudflareClient)("update", inputRecord, Option(physicalResourceId))
 
       output.attempt.compile.toList.map(_.head).unsafeRunSync() must beLeft[Throwable].like {
-        case DnsRecordTypeChange(existingRecordType, newRecordType) ⇒
+        case DnsRecordTypeChange(existingRecordType, newRecordType) =>
           existingRecordType must_== "A"
           newRecordType must_== "CNAME"
       }
@@ -471,7 +471,7 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val output = UpdateCloudflare(fakeCloudflareClient)("update", inputRecord, Option(physicalResourceId))
 
       output.attempt.compile.toList.map(_.head).unsafeRunSync() must beLeft[Throwable].like {
-        case DnsRecordTypeChange(existingRecordType, newRecordType) ⇒
+        case DnsRecordTypeChange(existingRecordType, newRecordType) =>
           existingRecordType must_== "MX"
           newRecordType must_== "TXT"
       }
@@ -531,9 +531,9 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val output = UpdateCloudflare(fakeDnsRecordClient)("delete", inputRecord, Option(physicalResourceId))
 
       output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
-        case List(handlerResponse) ⇒
+        case List(handlerResponse) =>
           handlerResponse.physicalId must_== physicalResourceId
-          handlerResponse.data must havePair("deletedRecordId" → physicalResourceId.asJson)
+          handlerResponse.data must havePair("deletedRecordId" -> physicalResourceId.asJson)
       }.await
     }
 
@@ -558,9 +558,9 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
       val output = UpdateCloudflare(fakeDnsRecordClient)("delete", inputRecord, Option(physicalResourceId))
 
       output.compile.toList.unsafeToFuture() must beLike[List[HandlerResponse]] {
-        case List(handlerResponse) ⇒
+        case List(handlerResponse) =>
           handlerResponse.physicalId must_== physicalResourceId
-          handlerResponse.data must not(havePair("deletedRecordId" → physicalResourceId))
+          handlerResponse.data must not(havePair("deletedRecordId" -> physicalResourceId))
       }.await
 
       // TODO deal with logging
@@ -596,7 +596,7 @@ class UpdateCloudflareSpec(implicit ee: ExecutionEnv) extends Specification with
     "DnsRecordTypeChange" should {
       "mention the existing and new record types" >> {
         DnsRecordTypeChange("existing", "new") must beLikeA[RuntimeException] {
-          case ex ⇒ ex.getMessage must_== """Refusing to change DNS record from "existing" to "new"."""
+          case ex => ex.getMessage must_== """Refusing to change DNS record from "existing" to "new"."""
         }
       }
     }

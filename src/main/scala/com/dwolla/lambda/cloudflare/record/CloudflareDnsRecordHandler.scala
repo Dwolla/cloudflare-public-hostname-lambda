@@ -30,27 +30,27 @@ class CloudflareDnsRecordHandler(httpClientStream: Stream[IO, Client[IO]], kmsCl
 
   private def constructCloudflareClient(resourceProperties: Map[String, Json]): Stream[IO, DnsRecordClient[IO]] =
     for {
-      (email, key) ← decryptSensitiveProperties(resourceProperties)
-      httpClient ← httpClientStream
+      (email, key) <- decryptSensitiveProperties(resourceProperties)
+      httpClient <- httpClientStream
       executor = new StreamingCloudflareApiExecutor[IO](httpClient, CloudflareAuthorization(email, key))
     } yield DnsRecordClient(executor)
 
   private def decryptSensitiveProperties(resourceProperties: Map[String, Json]): Stream[IO, (String, String)] =
     for {
-      kmsClient ← kmsClientStream
-      emailCryptoText ← Stream.emit(resourceProperties("CloudflareEmail")).covary[IO].through(decoder[IO, String])
-      keyCryptoText ← Stream.emit(resourceProperties("CloudflareKey")).covary[IO].through(decoder[IO, String])
-      plaintextMap ← kmsClient.decryptBase64("CloudflareEmail" → emailCryptoText, "CloudflareKey" → keyCryptoText).map(_.mapValues(new String(_, "UTF-8")))
+      kmsClient <- kmsClientStream
+      emailCryptoText <- Stream.emit(resourceProperties("CloudflareEmail")).covary[IO].through(decoder[IO, String])
+      keyCryptoText <- Stream.emit(resourceProperties("CloudflareKey")).covary[IO].through(decoder[IO, String])
+      plaintextMap <- kmsClient.decryptBase64("CloudflareEmail" -> emailCryptoText, "CloudflareKey" -> keyCryptoText).map(_.mapValues(new String(_, "UTF-8")))
       emailPlaintext = plaintextMap("CloudflareEmail")
       keyPlaintext = plaintextMap("CloudflareKey")
     } yield (emailPlaintext, keyPlaintext)
 
   override def handleRequest(input: CloudFormationCustomResourceRequest): IO[HandlerResponse] =
     (for {
-      resourceProperties ← Stream.eval(IO.fromEither(input.ResourceProperties.toRight(MissingResourceProperties)))
-      dnsRecord ← parseRecordFrom(resourceProperties)
-      cloudflareClient ← constructCloudflareClient(resourceProperties)
-      res ← UpdateCloudflare(cloudflareClient)(input.RequestType, dnsRecord, input.PhysicalResourceId)
+      resourceProperties <- Stream.eval(IO.fromEither(input.ResourceProperties.toRight(MissingResourceProperties)))
+      dnsRecord <- parseRecordFrom(resourceProperties)
+      cloudflareClient <- constructCloudflareClient(resourceProperties)
+      res <- UpdateCloudflare(cloudflareClient)(input.RequestType, dnsRecord, input.PhysicalResourceId)
     } yield res).compile.toList.map(_.head)
 
 }
@@ -84,26 +84,26 @@ object UpdateCloudflare {
             unidentifiedDnsRecord: UnidentifiedDnsRecord,
             physicalResourceId: Option[String]): Stream[IO, HandlerResponse] =
     requestType.toUpperCase match {
-      case "CREATE" | "UPDATE" ⇒
+      case "CREATE" | "UPDATE" =>
         handleCreateOrUpdate(unidentifiedDnsRecord, physicalResourceId)(cloudflareDnsRecordClient)
-      case "DELETE" ⇒ handleDelete(physicalResourceId.get)(cloudflareDnsRecordClient)
+      case "DELETE" => handleDelete(physicalResourceId.get)(cloudflareDnsRecordClient)
     }
 
   private def handleCreateOrUpdate(unidentifiedDnsRecord: UnidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId: Option[String])
                                   (implicit cloudflare: DnsRecordClient[IO]): Stream[IO, HandlerResponse] =
     unidentifiedDnsRecord.recordType.toUpperCase() match {
-      case "CNAME" ⇒ Stream.eval(handleCreateOrUpdateCNAME(unidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId))
-      case _ ⇒ handleCreateOrUpdateNonCNAME(unidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId)
+      case "CNAME" => Stream.eval(handleCreateOrUpdateCNAME(unidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId))
+      case _ => handleCreateOrUpdateNonCNAME(unidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId)
     }
 
   private def handleDelete(physicalResourceId: String)
                           (implicit cloudflare: DnsRecordClient[IO]): Stream[IO, HandlerResponse] = {
     for {
-      existingRecord ← cloudflare.getByUri(physicalResourceId)
-      deleted ← cloudflare.deleteDnsRecord(existingRecord.physicalResourceId)
+      existingRecord <- cloudflare.getByUri(physicalResourceId)
+      deleted <- cloudflare.deleteDnsRecord(existingRecord.physicalResourceId)
     } yield {
       val data = Map(
-        "deletedRecordId" → Json.fromString(deleted)
+        "deletedRecordId" -> Json.fromString(deleted)
       )
 
       HandlerResponse(physicalResourceId, data)
@@ -112,21 +112,21 @@ object UpdateCloudflare {
 
   private def warnAboutMissingRecordDeletion(physicalResourceId: String): IO[HandlerResponse] =
     for {
-      _ ← IO(logger.warn("The record could not be deleted because it did not exist; nonetheless, responding with Success!"))
+      _ <- IO(logger.warn("The record could not be deleted because it did not exist; nonetheless, responding with Success!"))
     } yield HandlerResponse(physicalResourceId, Map.empty[String, Json])
 
   private def handleCreateOrUpdateNonCNAME(unidentifiedDnsRecord: UnidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId: Stream[IO, String])
                                           (implicit cloudflare: DnsRecordClient[IO]): Stream[IO, HandlerResponse] = {
     for {
-      maybeExistingRecord ← cloudformationProvidedPhysicalResourceId.flatMap(cloudflare.getByUri).last
-      createOrUpdate ← maybeExistingRecord.fold(createRecord)(updateRecord).run(unidentifiedDnsRecord)
+      maybeExistingRecord <- cloudformationProvidedPhysicalResourceId.flatMap(cloudflare.getByUri).last
+      createOrUpdate <- maybeExistingRecord.fold(createRecord)(updateRecord).run(unidentifiedDnsRecord)
     } yield createOrUpdateToHandlerResponse(createOrUpdate, maybeExistingRecord)
   }
 
   private def findAtMostOneExistingCNAME(name: String)
                                         (implicit cloudflare: DnsRecordClient[IO]): IO[Option[IdentifiedDnsRecord]] =
     cloudflare.getExistingDnsRecords(name, recordType = Option("CNAME")).compile.toList
-      .flatMap { identifiedDnsRecords ⇒
+      .flatMap { identifiedDnsRecords =>
         if (identifiedDnsRecords.size < 2) IO.pure(identifiedDnsRecords.headOption)
         else IO.raiseError(MultipleCloudflareRecordsExistForDomainNameException(name, identifiedDnsRecords.map {
           import com.dwolla.cloudflare.domain.model.Implicits._
@@ -137,10 +137,10 @@ object UpdateCloudflare {
   private def handleCreateOrUpdateCNAME(unidentifiedDnsRecord: UnidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId: Option[String])
                                        (implicit cloudflare: DnsRecordClient[IO]): IO[HandlerResponse] =
     for {
-      maybeIdentifiedDnsRecord ← findAtMostOneExistingCNAME(unidentifiedDnsRecord.name)
-      createOrUpdate ← maybeIdentifiedDnsRecord.fold(createRecord)(updateRecord).run(unidentifiedDnsRecord).compile.toList.map(_.head)
-      _ ← warnIfProvidedIdDoesNotMatchDiscoveredId(cloudformationProvidedPhysicalResourceId, maybeIdentifiedDnsRecord, unidentifiedDnsRecord.name)
-      _ ← warnIfNoIdWasProvidedButDnsRecordExisted(cloudformationProvidedPhysicalResourceId, maybeIdentifiedDnsRecord)
+      maybeIdentifiedDnsRecord <- findAtMostOneExistingCNAME(unidentifiedDnsRecord.name)
+      createOrUpdate <- maybeIdentifiedDnsRecord.fold(createRecord)(updateRecord).run(unidentifiedDnsRecord).compile.toList.map(_.head)
+      _ <- warnIfProvidedIdDoesNotMatchDiscoveredId(cloudformationProvidedPhysicalResourceId, maybeIdentifiedDnsRecord, unidentifiedDnsRecord.name)
+      _ <- warnIfNoIdWasProvidedButDnsRecordExisted(cloudformationProvidedPhysicalResourceId, maybeIdentifiedDnsRecord)
     } yield createOrUpdateToHandlerResponse(createOrUpdate, maybeIdentifiedDnsRecord)
 
   /*_*/
@@ -157,15 +157,15 @@ object UpdateCloudflare {
 
   private def updateRecord(existingRecord: IdentifiedDnsRecord)(implicit cloudflare: DnsRecordClient[IO]): Kleisli[Stream[IO, ?], UnidentifiedDnsRecord, CreateOrUpdate[IdentifiedDnsRecord]] =
     for {
-      update ← assertRecordTypeWillNotChange(existingRecord.recordType).andThen { unidentifiedDnsRecord ⇒
+      update <- assertRecordTypeWillNotChange(existingRecord.recordType).andThen { unidentifiedDnsRecord =>
         cloudflare.updateDnsRecord(unidentifiedDnsRecord.identifyAs(existingRecord.physicalResourceId)).map(Update(_))
       }
     } yield update
 
   private def warnIfProvidedIdDoesNotMatchDiscoveredId(physicalResourceId: Option[String], updateableRecord: Option[IdentifiedDnsRecord], hostname: String): IO[Unit] = IO {
     for {
-      providedId ← physicalResourceId
-      discoveredId ← updateableRecord.map(_.physicalResourceId)
+      providedId <- physicalResourceId
+      discoveredId <- updateableRecord.map(_.physicalResourceId)
       if providedId != discoveredId
     } logger.warn(s"""The passed physical ID "$providedId" does not match the discovered physical ID "$discoveredId" for hostname "$hostname". This may indicate a change to this stack's DNS entries that was not managed by CloudFormation. Updating the discovered record instead of the record passed by CloudFormation.""")
   }
@@ -173,18 +173,18 @@ object UpdateCloudflare {
   private def warnIfNoIdWasProvidedButDnsRecordExisted(physicalResourceId: Option[String], existingRecord: Option[IdentifiedDnsRecord]): IO[Unit] = IO {
     if (physicalResourceId.isEmpty)
       for {
-        dnsRecord ← existingRecord
-        discoveredId ← dnsRecord.physicalResourceId
+        dnsRecord <- existingRecord
+        discoveredId <- dnsRecord.physicalResourceId
       } logger.warn(s"""Discovered DNS record ID "$discoveredId" for hostname "${dnsRecord.name}", with existing content "${dnsRecord.content}". This record will be updated instead of creating a new record.""")
   }
 
   private def createOrUpdateToHandlerResponse(createOrUpdate: CreateOrUpdate[IdentifiedDnsRecord], existingRecord: Option[IdentifiedDnsRecord]): HandlerResponse = {
     val dnsRecord = createOrUpdate.value
     val data = Map(
-      "dnsRecord" → dnsRecord.asJson,
-      "created" → createOrUpdate.create.asJson,
-      "updated" → createOrUpdate.update.asJson,
-      "oldDnsRecord" → existingRecord.asJson,
+      "dnsRecord" -> dnsRecord.asJson,
+      "created" -> createOrUpdate.create.asJson,
+      "updated" -> createOrUpdate.update.asJson,
+      "oldDnsRecord" -> existingRecord.asJson,
     )
 
     HandlerResponse(dnsRecord.physicalResourceId, data)
