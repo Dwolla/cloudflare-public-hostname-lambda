@@ -13,7 +13,10 @@ lazy val `cloudflare-public-hostname-lambda` = project
     libraryDependencies ++= {
       Seq(
         "org.typelevel" %%% "feral-lambda-cloudformation-custom-resource" % "0.3.1",
+        "org.typelevel" %%% "cats-tagless-macros" % "0.16.3",
         "com.dwolla" %%% "cloudflare-api-client" % "4.0.0-M16",
+        "com.dwolla" %%% "natchez-tagless" % "0.2.6",
+        "com.disneystreaming.smithy4s" %%% "smithy4s-cats" % smithy4sVersion.value,
         "com.disneystreaming.smithy4s" %%% "smithy4s-http4s" % smithy4sVersion.value,
         "com.disneystreaming.smithy4s" %%% "smithy4s-aws-http4s" % smithy4sVersion.value,
         "com.disneystreaming.smithy4s" %%% "smithy4s-json" % smithy4sVersion.value,

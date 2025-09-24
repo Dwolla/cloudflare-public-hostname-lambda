@@ -9,6 +9,8 @@ import cats.effect.std.Env
 import cats.effect.{Trace as _, *}
 import cats.mtl.Local
 import cats.syntax.all.*
+import cats.tagless.aop.*
+import cats.tagless.Derive
 import com.amazonaws.kms.{CiphertextType, KMS, PlaintextType}
 import com.dwolla.cloudflare.*
 import com.dwolla.cloudflare.domain.model.*
@@ -16,6 +18,7 @@ import com.dwolla.cloudflare.domain.model.Exceptions.RecordAlreadyExists
 import feral.lambda.cloudformation.{CloudFormationCustomResource, CloudFormationCustomResourceRequest, HandlerResponse}
 import feral.lambda.{IOLambda, Invocation, KernelSource, TracedHandler, cloudformation}
 import fs2.io.net.Network
+import fs2.Stream
 import mouse.all.*
 import natchez.*
 import natchez.http4s.*
@@ -31,6 +34,9 @@ import smithy4s.aws.kernel.AwsRegion
 import smithy4s.aws.{AwsClient, AwsEnvironment}
 import _root_.io.circe.JsoniterScalaCodec.*
 import smithy4s.json.Json.*
+import NothingEncoder.*
+import com.dwolla.tracing.syntax.*
+import com.dwolla.tracing.LowPriorityTraceableValueInstances.*
 
 import scala.util.control.NoStackTrace
 
@@ -80,19 +86,24 @@ class CloudflareDnsRecordHandler[F[_] : Concurrent : LoggerFactory : NonEmptyPar
 
   override def createResource(input: DnsRecordWithCredentials): F[HandlerResponse[JsonObject]] =
     constructCloudflareClient(input)
-      .map(new UpdateCloudflare(_))
+      .map(UpdateCloudflare(_))
       .flatMap(_.handleCreateOrUpdate(input.dnsRecord, None))
 
   override def updateResource(input: DnsRecordWithCredentials, physicalResourceId: cloudformation.PhysicalResourceId): F[HandlerResponse[JsonObject]] =
     constructCloudflareClient(input)
-      .map(new UpdateCloudflare(_))
+      .map(UpdateCloudflare(_))
       .flatMap(_.handleCreateOrUpdate(input.dnsRecord, physicalResourceId.some))
 
   override def deleteResource(input: DnsRecordWithCredentials, physicalResourceId: cloudformation.PhysicalResourceId): F[HandlerResponse[JsonObject]] =
     constructCloudflareClient(input)
-      .map(new UpdateCloudflare(_))
+      .map(UpdateCloudflare(_))
       .flatMap(_.handleDelete(physicalResourceId))
 
+}
+
+object NothingEncoder {
+  @annotation.nowarn("msg=dead code following this construct")
+  implicit val encoder: Encoder[Nothing] = Encoder.instance[Nothing](_ => Json.Null)
 }
 
 object CloudflareDnsRecordHandler extends IOLambda[CloudFormationCustomResourceRequest[DnsRecordWithCredentials], Nothing] {
@@ -124,23 +135,40 @@ object CloudflareDnsRecordHandler extends IOLambda[CloudFormationCustomResourceR
     }
 }
 
-// TODO add tracing instrumentation
-class UpdateCloudflare[F[_] : Concurrent : Logger : Trace](cloudflare: DnsRecordClient[F]) {
+trait UpdateCloudflare[F[_]] {
+  def handleCreateOrUpdate(unidentifiedDnsRecord: UnidentifiedDnsRecord,
+                           cloudformationProvidedPhysicalResourceId: Option[cloudformation.PhysicalResourceId]): F[HandlerResponse[JsonObject]]
+
+  def handleDelete(physicalResourceId: cloudformation.PhysicalResourceId): F[HandlerResponse[JsonObject]]
+}
+
+object UpdateCloudflare {
+  implicit val physicalResourceIdTraceableValue: TraceableValue[cloudformation.PhysicalResourceId] = TraceableValue[String].contramap(_.value)
+  implicit val aspect: Aspect[UpdateCloudflare, TraceableValue, TraceableValue] = Derive.aspect
+
+  def apply[F[_] : Concurrent : Logger : Trace](cloudflare: DnsRecordClient[F]): UpdateCloudflare[F] =
+    (new UpdateCloudflareImpl(cloudflare): UpdateCloudflare[F]).traceWithInputsAndOutputs
+}
+
+class UpdateCloudflareImpl[F[_] : Concurrent : Logger : Trace](cloudflare: DnsRecordClient[F]) extends UpdateCloudflare[F] {
 
   def handleCreateOrUpdate(unidentifiedDnsRecord: UnidentifiedDnsRecord,
-                           cloudformationProvidedPhysicalResourceId: Option[cloudformation.PhysicalResourceId]): F[HandlerResponse[JsonObject]] =
+                           cloudformationProvidedPhysicalResourceId: Option[cloudformation.PhysicalResourceId]): F[HandlerResponse[JsonObject]] = {
     unidentifiedDnsRecord.recordType.toUpperCase() match {
       case "CNAME" => handleCreateOrUpdateCNAME(unidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId)
       case _ => handleCreateOrUpdateNonCNAME(unidentifiedDnsRecord, cloudformationProvidedPhysicalResourceId)
     }
+  }
 
-  def handleDelete(physicalResourceId: cloudformation.PhysicalResourceId)
-                  : F[HandlerResponse[JsonObject]] =
-    cloudflare.getByUri(physicalResourceId.value)
-      .map(_.physicalResourceId)
-      .flatMap(cloudflare.deleteDnsRecord)
-      .compile
-      .toList
+  def handleDelete(physicalResourceId: cloudformation.PhysicalResourceId): F[HandlerResponse[JsonObject]] =
+    Trace[F].span("DnsRecordClient.getByUri >> DnsRecordClient.deleteDnsRecord") {
+      Trace[F].put("physicalResourceId.input" -> physicalResourceId) >>
+        cloudflare.getByUri(physicalResourceId.value)
+          .map(_.physicalResourceId)
+          .flatMap(id => Stream.eval(Trace[F].put("physicalResourceId.found" -> id)) >> cloudflare.deleteDnsRecord(id))
+          .compile
+          .toList
+      }
       .flatMap {
         case Nil => warnAboutMissingRecordDeletion(physicalResourceId)
         case deleted :: Nil =>
@@ -166,7 +194,13 @@ class UpdateCloudflare[F[_] : Concurrent : Logger : Trace](cloudflare: DnsRecord
                                            cloudformationProvidedPhysicalResourceId: Option[cloudformation.PhysicalResourceId])
                                           : F[HandlerResponse[JsonObject]] =
     for {
-      maybeExistingRecord <- cloudformationProvidedPhysicalResourceId.map(_.value).flatTraverse(cloudflare.getByUri(_).compile.last)
+      maybeExistingRecord <- cloudformationProvidedPhysicalResourceId.map(_.value).flatTraverse(str => Trace[F].span("DnsRecordClient.getByUri") {
+        for {
+          _ <- Trace[F].put("physicalResourceId.input" -> str)
+          out <- cloudflare.getByUri(str).compile.last
+          _ <- Trace[F].put("output" -> out)
+        } yield out
+      })
       createOrUpdate <- maybeExistingRecord.fold(createRecord)(updateRecord).run(unidentifiedDnsRecord)
     } yield createOrUpdateToHandlerResponse(createOrUpdate, maybeExistingRecord)
 
@@ -189,6 +223,7 @@ class UpdateCloudflare[F[_] : Concurrent : Logger : Trace](cloudflare: DnsRecord
       _ <- warnIfNoIdWasProvidedButDnsRecordExisted(cloudformationProvidedPhysicalResourceId, maybeIdentifiedDnsRecord)
     } yield createOrUpdateToHandlerResponse(createOrUpdate, maybeIdentifiedDnsRecord)
 
+  // TODO add tracing
   private def createRecord: Kleisli[F, UnidentifiedDnsRecord, CreateOrUpdate[IdentifiedDnsRecord]] =
     Kleisli { unidentifiedDnsRecord =>
       cloudflare
@@ -202,6 +237,7 @@ class UpdateCloudflare[F[_] : Concurrent : Logger : Trace](cloudflare: DnsRecord
         .lastOrError
     }
 
+  // TODO add tracing
   private def updateRecord(existingRecord: IdentifiedDnsRecord): Kleisli[F, UnidentifiedDnsRecord, CreateOrUpdate[IdentifiedDnsRecord]] =
     assertRecordTypeWillNotChange(existingRecord.recordType)
       .map(_.identifyAs(existingRecord.physicalResourceId))
