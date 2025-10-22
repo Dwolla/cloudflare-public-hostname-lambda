@@ -1,3 +1,5 @@
+import org.typelevel.sbt.gha.WorkflowStep
+
 evictionErrorLevel := Level.Warn
 
 ThisBuild / organization := "Dwolla"
@@ -17,6 +19,8 @@ ThisBuild / mergifyStewardConfig ~= { _.map {
   _.withAuthor("dwolla-oss-scala-steward[bot]")
     .withMergeMinors(true)
 }}
+ThisBuild / githubWorkflowPublishTargetBranches := Seq.empty
+ThisBuild / githubWorkflowBuild += WorkflowStep.Sbt(List("npmPackage"), name = Some("Package"))
 
 lazy val `cloudflare-public-hostname-lambda` = project
   .in(file("."))

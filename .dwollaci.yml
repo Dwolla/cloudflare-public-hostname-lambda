@@ -12,8 +12,7 @@ stages:
         set -o xtrace
         sbt test
         sbt doc
-        sbt autoscaling-ecs-draining-lambda/Universal/packageBin
-        sbt registrator-health-check-lambda/Universal/packageBin
+        sbt npmPackage
     filesToStash:
       - '**'
   deployProd:
