@@ -1,7 +1,7 @@
 package com.dwolla.lambda.cloudflare.record
 
 import _root_.io.circe.*
-import _root_.io.circe.generic.auto.*
+import _root_.io.circe.JsoniterScalaCodec.*
 import _root_.io.circe.syntax.*
 import cats.*
 import cats.data.*
@@ -9,16 +9,21 @@ import cats.effect.std.Env
 import cats.effect.{Trace as _, *}
 import cats.mtl.Local
 import cats.syntax.all.*
-import cats.tagless.aop.*
 import cats.tagless.Derive
+import cats.tagless.aop.*
 import com.amazonaws.kms.{CiphertextType, KMS, PlaintextType}
 import com.dwolla.cloudflare.*
+import com.dwolla.cloudflare.domain.model
 import com.dwolla.cloudflare.domain.model.*
 import com.dwolla.cloudflare.domain.model.Exceptions.RecordAlreadyExists
+import com.dwolla.lambda.cloudflare.record.NothingEncoder.*
+import com.dwolla.tracing.LowPriorityTraceableValueInstances.*
+import com.dwolla.tracing.syntax.*
 import feral.lambda.cloudformation.{CloudFormationCustomResource, CloudFormationCustomResourceRequest, HandlerResponse}
-import feral.lambda.{IOLambda, Invocation, KernelSource, TracedHandler, cloudformation}
-import fs2.io.net.Network
+import feral.lambda.*
 import fs2.Stream
+import fs2.io.compression.*
+import fs2.io.net.Network
 import mouse.all.*
 import natchez.*
 import natchez.http4s.*
@@ -32,11 +37,7 @@ import org.typelevel.log4cats.console.*
 import org.typelevel.log4cats.{Logger, LoggerFactory}
 import smithy4s.aws.kernel.AwsRegion
 import smithy4s.aws.{AwsClient, AwsEnvironment}
-import _root_.io.circe.JsoniterScalaCodec.*
 import smithy4s.json.Json.*
-import NothingEncoder.*
-import com.dwolla.tracing.syntax.*
-import com.dwolla.tracing.LowPriorityTraceableValueInstances.*
 
 import scala.util.control.NoStackTrace
 
@@ -64,12 +65,13 @@ case class NoPlaintextForCiphertext(ciphertext: CiphertextType)
   extends RuntimeException(s"KMS returned no plaintext for ciphertext input $ciphertext")
     with NoStackTrace
 
-class CloudflareDnsRecordHandler[F[_] : Concurrent : LoggerFactory : NonEmptyParallel : Trace](httpClient: Client[F],
-                                                                                               kms: KMS[F],
+@annotation.experimental
+class CloudflareDnsRecordHandler[F[_] : {Concurrent, LoggerFactory, NonEmptyParallel, Trace}](httpClient: Client[F],
+                                                                                              kms: KMS[F],
                                                                                               ) extends CloudFormationCustomResource[F, DnsRecordWithCredentials, JsonObject] {
   private implicit val logger: Logger[F] = LoggerFactory[F].getLogger
 
-  private def constructCloudflareClient(input: DnsRecordWithCredentials): F[DnsRecordClient[F]] =
+  private def constructCloudflareClient(input: DnsRecordWithCredentials): F[DnsRecordClient[Stream[F, *]]] =
     for {
       (email, key) <- decryptSensitiveProperties(input)
       executor = new StreamingCloudflareApiExecutor[F](httpClient, CloudflareAuthorization(email.value.toUTF8String, key.value.toUTF8String))
@@ -107,7 +109,7 @@ object NothingEncoder {
 }
 
 object CloudflareDnsRecordHandler extends IOLambda[CloudFormationCustomResourceRequest[DnsRecordWithCredentials], Nothing] {
-  private def httpClient[F[_] : Async : Network : Trace]: Resource[F, Client[F]] =
+  private def httpClient[F[_] : {Async, Network, Trace}]: Resource[F, Client[F]] =
     EmberClientBuilder
       .default[F]
       .build
@@ -115,24 +117,27 @@ object CloudflareDnsRecordHandler extends IOLambda[CloudFormationCustomResourceR
       .map(NatchezMiddleware.client(_))
 
   override def handler: Resource[IO, Invocation[IO, CloudFormationCustomResourceRequest[DnsRecordWithCredentials]] => IO[Option[Nothing]]] =
-    for {
+    for
       xray <- XRay.entryPoint[IO]()
-      implicit0(logger: LoggerFactory[IO]) = ConsoleLoggerFactory.create[IO]
-      case implicit0(local: Local[IO, Span[IO]]) <- IO.local(Span.noop[IO]).toResource
+      given LoggerFactory[IO] = ConsoleLoggerFactory.create[IO]
+      given Local[IO, Span[IO]] <- IO.local(Span.noop[IO]).toResource
       client <- httpClient[IO]
       region <- Env[IO].get("AWS_REGION").liftEitherT(new RuntimeException("missing AWS_REGION environment variable")).map(AwsRegion(_)).rethrowT.toResource
       awsEnv <- AwsEnvironment.default(client, region)
       kms <- AwsClient(KMS, awsEnv)
-    } yield {
-      implicit val kernelSourceCloudFormationCustomResourceRequest: KernelSource[CloudFormationCustomResourceRequest[DnsRecordWithCredentials]] = KernelSource.emptyKernelSource
+    yield buildHandler(xray, client, kms)
 
-      val f: Invocation[IO, CloudFormationCustomResourceRequest[DnsRecordWithCredentials]] => IO[Option[Nothing]] = implicit inv =>
-        TracedHandler(xray) { implicit trace =>
-          CloudFormationCustomResource(client, new CloudflareDnsRecordHandler(client, kms))
-        }
+  def buildHandler[F[_] : {Concurrent, LoggerFactory, NonEmptyParallel}](entryPoint: EntryPoint[F],
+                                                                         client: Client[F],
+                                                                         kms: KMS[F],
+                                                                        )
+                                                                        (using Local[F, Span[F]]): Invocation[F, CloudFormationCustomResourceRequest[DnsRecordWithCredentials]] => F[Option[Nothing]] =
+    implicit inv =>
+      given KernelSource[CloudFormationCustomResourceRequest[DnsRecordWithCredentials]] = KernelSource.emptyKernelSource
 
-      f
-    }
+      TracedHandler(entryPoint):
+        CloudFormationCustomResource(client, new CloudflareDnsRecordHandler(client, kms))
+
 }
 
 trait UpdateCloudflare[F[_]] {
@@ -142,15 +147,16 @@ trait UpdateCloudflare[F[_]] {
   def handleDelete(physicalResourceId: cloudformation.PhysicalResourceId): F[HandlerResponse[JsonObject]]
 }
 
+@annotation.experimental
 object UpdateCloudflare {
   implicit val physicalResourceIdTraceableValue: TraceableValue[cloudformation.PhysicalResourceId] = TraceableValue[String].contramap(_.value)
   implicit val aspect: Aspect[UpdateCloudflare, TraceableValue, TraceableValue] = Derive.aspect
 
-  def apply[F[_] : Concurrent : Logger : Trace](cloudflare: DnsRecordClient[F]): UpdateCloudflare[F] =
+  def apply[F[_] : {Concurrent, Logger, Trace}](cloudflare: DnsRecordClient[Stream[F, *]]): UpdateCloudflare[F] =
     (new UpdateCloudflareImpl(cloudflare): UpdateCloudflare[F]).traceWithInputsAndOutputs
 }
 
-class UpdateCloudflareImpl[F[_] : Concurrent : Logger : Trace](cloudflare: DnsRecordClient[F]) extends UpdateCloudflare[F] {
+class UpdateCloudflareImpl[F[_] : {Concurrent, Logger, Trace}](cloudflare: DnsRecordClient[Stream[F, *]]) extends UpdateCloudflare[F] {
 
   def handleCreateOrUpdate(unidentifiedDnsRecord: UnidentifiedDnsRecord,
                            cloudformationProvidedPhysicalResourceId: Option[cloudformation.PhysicalResourceId]): F[HandlerResponse[JsonObject]] = {
@@ -226,25 +232,38 @@ class UpdateCloudflareImpl[F[_] : Concurrent : Logger : Trace](cloudflare: DnsRe
   // TODO add tracing
   private def createRecord: Kleisli[F, UnidentifiedDnsRecord, CreateOrUpdate[IdentifiedDnsRecord]] =
     Kleisli { unidentifiedDnsRecord =>
-      cloudflare
-        .createDnsRecord(unidentifiedDnsRecord)
-        .recoverWith {
-          case RecordAlreadyExists =>
-            cloudflare.getExistingDnsRecords(unidentifiedDnsRecord.name, Option(unidentifiedDnsRecord.content), Option(unidentifiedDnsRecord.recordType))
-        }
-        .map(CreateOrUpdate.create)
-        .compile
-        .lastOrError
+      Trace[F].span("createRecord") {
+        cloudflare
+          .createDnsRecord(unidentifiedDnsRecord)
+          .compile
+          .last
+          .recoverWith {
+            case RecordAlreadyExists =>
+              Trace[F].span("createRecord.RecordAlreadyExists") {
+                cloudflare
+                  .getExistingDnsRecords(unidentifiedDnsRecord.name, Option(unidentifiedDnsRecord.content), Option(unidentifiedDnsRecord.recordType))
+                  .compile
+                  .last
+              }
+          }
+          .liftOptionT
+          .getOrRaise(new NoSuchElementException(s"No DNS record was created for ${unidentifiedDnsRecord.name}"))
+          .map(CreateOrUpdate.create)
+      }
     }
 
   // TODO add tracing
   private def updateRecord(existingRecord: IdentifiedDnsRecord): Kleisli[F, UnidentifiedDnsRecord, CreateOrUpdate[IdentifiedDnsRecord]] =
     assertRecordTypeWillNotChange(existingRecord.recordType)
-      .map(_.identifyAs(existingRecord.physicalResourceId))
+      .map(_.identifyAs(existingRecord.physicalResourceId.value))
       .andThen {
-        cloudflare
-          .updateDnsRecord(_)
-          .map(CreateOrUpdate.update)
+        Stream.emit(_)
+          .unNone
+          .flatMap {
+            cloudflare
+              .updateDnsRecord(_)
+              .map(CreateOrUpdate.update)
+          }
           .compile
           .lastOrError
       }
@@ -256,7 +275,7 @@ class UpdateCloudflareImpl[F[_] : Concurrent : Logger : Trace](cloudflare: DnsRe
       for {
         providedId <- physicalResourceId
         discoveredId <- updateableRecord.map(_.physicalResourceId)
-        if providedId.value != discoveredId
+        if providedId.value != discoveredId.value
       } yield s"""The passed physical ID "$providedId" does not match the discovered physical ID "$discoveredId" for hostname "$hostname". This may indicate a change to this stack's DNS entries that was not managed by CloudFormation. Updating the discovered record instead of the record passed by CloudFormation."""
 
     warning.traverse_(Logger[F].warn(_))
@@ -282,7 +301,7 @@ class UpdateCloudflareImpl[F[_] : Concurrent : Logger : Trace](cloudflare: DnsRe
       "oldDnsRecord" -> existingRecord.asJson,
     )
 
-    HandlerResponse(cloudformation.PhysicalResourceId.unsafeApply(dnsRecord.physicalResourceId), data.some)
+    HandlerResponse(physicalResourceIdBijection.to(dnsRecord.physicalResourceId), data.some)
   }
 
   private def assertRecordTypeWillNotChange(existingRecordType: String): Kleisli[F, UnidentifiedDnsRecord, UnidentifiedDnsRecord] =

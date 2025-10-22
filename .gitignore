@@ -3,3 +3,5 @@ target/
 project/project/
 node_modules/
 .bsp/
+package.json
+package-lock.json

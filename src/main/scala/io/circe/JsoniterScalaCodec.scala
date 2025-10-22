@@ -16,7 +16,7 @@ object JsoniterScalaCodec {
   def fromJsoniter[A](implicit jc: JsonValueCodec[A]): Codec[A] = {
     val enc: Encoder[A] = Encoder.instance { a =>
       // Use Jsoniter to serialize, then parse into Circe Json
-      val s = writeToString(a)(jc)
+      val s = writeToString(a)(using jc)
       io.circe.parser.parse(s) match {
         case Right(json) => json
         case Left(err) =>
@@ -29,7 +29,7 @@ object JsoniterScalaCodec {
       // Render the incoming Circe Json to a compact string, then read with Jsoniter
       val jsonStr = Printer.noSpaces.print(c.value)
       try {
-        Right(readFromString[A](jsonStr)(jc))
+        Right(readFromString[A](jsonStr)(using jc))
       } catch {
         case e: JsonReaderException => Left(DecodingFailure(e.getMessage, c.history))
         case e: Throwable => Left(DecodingFailure(e.getMessage, c.history))

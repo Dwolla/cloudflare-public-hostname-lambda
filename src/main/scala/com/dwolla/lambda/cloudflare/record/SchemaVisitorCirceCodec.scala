@@ -31,8 +31,8 @@ class SchemaVisitorCirceCodec(override protected val cache: CompilationCache[Cod
     case DString(value) => value.asJson
     case DBoolean(value) => value.asJson
     case DNull => io.circe.Json.Null
-    case DArray(value) => io.circe.Json.fromValues(value.map(_.asJson(documentEncoder)))
-    case DObject(value) => io.circe.Json.fromFields(value.map { case (k, v) => k -> v.asJson(documentEncoder) })
+    case DArray(value) => io.circe.Json.fromValues(value.map(_.asJson(using documentEncoder)))
+    case DObject(value) => io.circe.Json.fromFields(value.map { case (k, v) => k -> v.asJson(using documentEncoder) })
   }
   private implicit def documentDecoder: Decoder[Document] = Decoder.instance { c =>
     c.value.foldWith(DocumentFolder).toRight(DecodingFailure("Could not decode document", c.history))
@@ -156,7 +156,7 @@ class SchemaVisitorCirceCodec(override protected val cache: CompilationCache[Cod
         .traverse { case (df, _) =>
           val label = df.field.label
           val sub = cursor.downField(label)
-          sub.as(df.dec)
+          sub.as(using df.dec)
         }
         .map(vec => make(vec.toIndexedSeq))
     }
@@ -191,7 +191,7 @@ class SchemaVisitorCirceCodec(override protected val cache: CompilationCache[Cod
             alternatives.find(_.label == label).toRight(DecodingFailure(s"Unknown union alternative: $label", c.history)).flatMap { a0 =>
               val a = a0.asInstanceOf[Alt[U, Any]]
               val decAny = SchemaVisitorCirceCodec.fromSchema(a.schema, cache).asInstanceOf[Decoder[Any]]
-              c.downField(label).as(decAny).map(v => a.inject(v))
+              c.downField(label).as(using decAny).map(v => a.inject(v))
             }
           case Nil => Left(DecodingFailure("empty object for union", c.history))
           case _   => Left(DecodingFailure("expected single-field object for union", c.history))

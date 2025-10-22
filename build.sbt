@@ -2,7 +2,8 @@ evictionErrorLevel := Level.Warn
 
 ThisBuild / organization := "Dwolla"
 ThisBuild / homepage := Option(url("https://github.com/Dwolla/cloudflare-public-hostname-lambda"))
-ThisBuild / scalaVersion := "2.13.16"
+ThisBuild / scalaVersion := "3.7.3"
+ThisBuild / resolvers += Resolver.sonatypeCentralSnapshots
 
 lazy val `cloudflare-public-hostname-lambda` = project
   .in(file("."))
@@ -10,11 +11,12 @@ lazy val `cloudflare-public-hostname-lambda` = project
     name := "cloudflare-public-hostname-lambda",
     smithy4sAwsSpecs ++= Seq(AWS.kms),
     scalacOptions += "-Wconf:src=src_managed/.*:s",
+    dependencyOverrides += "org.scala-lang" %% "scala3-library" % scalaVersion.value,
     libraryDependencies ++= {
       Seq(
-        "org.typelevel" %%% "feral-lambda-cloudformation-custom-resource" % "0.3.1",
-        "org.typelevel" %%% "cats-tagless-macros" % "0.16.3",
-        "com.dwolla" %%% "cloudflare-api-client" % "4.0.0-M16",
+        "org.typelevel" %%% "feral-lambda-cloudformation-custom-resource" % "0.3.1-68-4c217bd-20251016T232327Z-SNAPSHOT",
+        "org.typelevel" %%% "cats-tagless-core" % "0.16.3",
+        "com.dwolla" %%% "cloudflare-api-client" % "4.0-827c1e4-SNAPSHOT",
         "com.dwolla" %%% "natchez-tagless" % "0.2.6",
         "com.disneystreaming.smithy4s" %%% "smithy4s-cats" % smithy4sVersion.value,
         "com.disneystreaming.smithy4s" %%% "smithy4s-http4s" % smithy4sVersion.value,
@@ -25,11 +27,22 @@ lazy val `cloudflare-public-hostname-lambda` = project
         "org.tpolecat" %%% "natchez-mtl" % "0.3.8",
         "org.tpolecat" %%% "natchez-xray" % "0.3.8",
         "org.tpolecat" %%% "natchez-http4s" % "0.6.1",
+        "org.tpolecat" %%% "natchez-http4s-mtl" % "0.6.1",
         "org.typelevel" %%% "log4cats-core" % "2.7.1",
         "org.typelevel" %%% "log4cats-js-console" % "2.7.1",
         "com.github.plokhotnyuk.jsoniter-scala" %%% "jsoniter-scala-circe" % "2.38.0",
+        "org.typelevel" %%% "munit-cats-effect" % "2.1.0" % Test,
+        "org.scalameta" %%% "munit" % "1.2.0" % Test,
+        "org.scalameta" %%% "munit-scalacheck" % "1.2.0" % Test,
+        "org.typelevel" %%% "scalacheck-effect-munit" % "2.1.0-RC1" % Test,
+        "org.tpolecat" %%% "natchez-testkit" % "0.3.8",
       )
     },
-    updateOptions := updateOptions.value.withCachedResolution(false),
+    buildInfoKeys := Seq[BuildInfoKey](
+      name,
+      version,
+    ),
+    buildInfoPackage := "com.dwolla.lambda.cloudflare.record",
+
   )
-  .enablePlugins(Smithy4sCodegenPlugin, LambdaJSPlugin)
+  .enablePlugins(BuildInfoPlugin, CdkDeployPlugin, LambdaJSPlugin, Smithy4sCodegenPlugin)
