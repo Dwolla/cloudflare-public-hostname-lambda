@@ -68,6 +68,7 @@ case class NoPlaintextForCiphertext(ciphertext: CiphertextType)
 @annotation.experimental
 class CloudflareDnsRecordHandler[F[_] : {Concurrent, LoggerFactory, NonEmptyParallel, Trace}](httpClient: Client[F],
                                                                                               kms: KMS[F],
+                                                                                              dnsRecordClient: StreamingCloudflareApiExecutor[F] => DnsRecordClient[Stream[F, *]],
                                                                                               ) extends CloudFormationCustomResource[F, DnsRecordWithCredentials, JsonObject] {
   private implicit val logger: Logger[F] = LoggerFactory[F].getLogger
 
@@ -75,7 +76,7 @@ class CloudflareDnsRecordHandler[F[_] : {Concurrent, LoggerFactory, NonEmptyPara
     for {
       (email, key) <- decryptSensitiveProperties(input)
       executor = new StreamingCloudflareApiExecutor[F](httpClient, CloudflareAuthorization(email.value.toUTF8String, key.value.toUTF8String))
-    } yield DnsRecordClient(executor)
+    } yield dnsRecordClient(executor)
 
   private def decrypt(ciphertext: CiphertextType): F[PlaintextType] =
     for {
@@ -125,18 +126,18 @@ object CloudflareDnsRecordHandler extends IOLambda[CloudFormationCustomResourceR
       region <- Env[IO].get("AWS_REGION").liftEitherT(new RuntimeException("missing AWS_REGION environment variable")).map(AwsRegion(_)).rethrowT.toResource
       awsEnv <- AwsEnvironment.default(client, region)
       kms <- AwsClient(KMS, awsEnv)
-    yield buildHandler(xray, client, kms)
+    yield buildHandler(xray, client, kms)(DnsRecordClient(_))
 
   def buildHandler[F[_] : {Concurrent, LoggerFactory, NonEmptyParallel}](entryPoint: EntryPoint[F],
                                                                          client: Client[F],
-                                                                         kms: KMS[F],
-                                                                        )
+                                                                         kms: KMS[F])
+                                                                        (dnsRecordClient: StreamingCloudflareApiExecutor[F] => DnsRecordClient[Stream[F, *]])
                                                                         (using Local[F, Span[F]]): Invocation[F, CloudFormationCustomResourceRequest[DnsRecordWithCredentials]] => F[Option[Nothing]] =
     implicit inv =>
       given KernelSource[CloudFormationCustomResourceRequest[DnsRecordWithCredentials]] = KernelSource.emptyKernelSource
 
       TracedHandler(entryPoint):
-        CloudFormationCustomResource(client, new CloudflareDnsRecordHandler(client, kms))
+        CloudFormationCustomResource(client, new CloudflareDnsRecordHandler(client, kms, dnsRecordClient))
 
 }
 

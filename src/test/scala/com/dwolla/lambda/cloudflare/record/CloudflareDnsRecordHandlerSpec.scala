@@ -84,34 +84,15 @@ object CloudflareQueryParams {
 
 }
 
-object CloudflareAuth {
-  type CloudflareAuthenticator[F[_], A] = CloudflareAuthorization => F[Option[A]]
-
-  private def validate[F[_]](expected: CloudflareAuthorization): CloudflareAuthenticator[F, CloudflareAuthorization] =
-    Option(_).filter(_ == expected).pure[F]
-
-  def apply[F[_]: Sync, A]: AuthMiddleware[F, A] =
-    challenged(challenge("Cloudflare", validate))
-
-  def challenge[F[_]: Applicative](expected: CloudflareAuthorization): Kleisli[F, Request[F], Either[Challenge, AuthedRequest[F, CloudflareAuthorization]]] =
-    Kleisli { req =>
-      validatePassword(validate, req).map {
-        case Some(authInfo) =>
-          Right(AuthedRequest(authInfo, req))
-        case None =>
-          Left(Challenge("Cloudflare", realm, authParams))
-      }
-    }
-
-  private def validatePassword[F[_] : Applicative](expected: CloudflareAuthorization,
-                                                   req: Request[F]): F[Option[CloudflareAuthorization]] =
-    (req.headers.get[`X-Auth-Email`], req.headers.get[`X-Auth-Key`]) match {
-      case Some((Some(email), Some(key))) if email == expected.email && key == expected.key =>
-        expected.some.pure[F]
-      case _ =>
-        none.pure[F]
-    }
-
+class DnsRecordClientStub[F[+_]](const: F[Nothing]) extends DnsRecordClient[F] {
+  override def getById(zoneId: ZoneId, resourceId: ResourceId): F[IdentifiedDnsRecord] = const
+  override def createDnsRecord(record: UnidentifiedDnsRecord): F[IdentifiedDnsRecord] = const
+  override def updateDnsRecord(record: IdentifiedDnsRecord): F[IdentifiedDnsRecord] = const
+  override def getExistingDnsRecords(name: String, content: Option[String], recordType: Option[String]): F[IdentifiedDnsRecord] = const
+  override def deleteDnsRecord(physicalResourceId: String): F[PhysicalResourceId] = const
+  @targetName3("deleteDnsRecordNewtype")
+  override def deleteDnsRecord(physicalResourceId: PhysicalResourceId): F[PhysicalResourceId] = const
+  override def getByUri(uri: String): F[IdentifiedDnsRecord] = const
 }
 
 @annotation.experimental
@@ -188,7 +169,9 @@ class UpdateCloudflareSpec extends CatsEffectSuite {
       fakeCloudFormation <- ResponseCapturingHttpApp[IO]
       kmsExceptionMessage = "The ciphertext refers to a customer master key that does not exist, does not exist in this region, or you are not allowed to access"
       mockKms = new KMSGen.Constant[Kind1[IO]#toKind5](IO.raiseError(KeyUnavailableException(ErrorMessageType(kmsExceptionMessage).some)))
-      handler = CloudflareDnsRecordHandler.buildHandler(entryPoint, fakeCloudFormation.client, mockKms)
+      handler = CloudflareDnsRecordHandler.buildHandler(entryPoint, fakeCloudFormation.client, mockKms) { _ =>
+        new DnsRecordClientStub(Stream.raiseError[IO](new NotImplementedError))
+      }
       request <- buildRequest(
         requestType = CloudFormationRequestType.UpdateRequest,
         physicalResourceId = cloudformation.PhysicalResourceId("different-physical-id"),
@@ -204,7 +187,6 @@ class UpdateCloudflareSpec extends CatsEffectSuite {
         ).some,
       )
       output <- handler(request)
-      _ <- entryPoint.ref.get.map(_.mkString_("\n")).flatMap(IO.println)
       response <- fakeCloudFormation.responses.take
     yield {
       assertEquals(output, None)
@@ -230,47 +212,7 @@ class UpdateCloudflareSpec extends CatsEffectSuite {
       given Local[IO, Span[IO]] <- IO.local(Span.noop[IO])
       entryPoint <- InMemory.EntryPoint.create[IO]
       fakeCloudFormation <- ResponseCapturingHttpApp[IO]
-      cloudflare = HttpRoutes.of[IO] {
-        case req@GET -> Root / "client" / "v4" / "zones" :? domainNameQueryParamMatcher(name) +& statusQueryParamMatcher("active") =>
-          Ok(ResponseDTO(
-            success = true,
-            result = ZoneDTO(id = idFromName(name).some, name = name),
-            errors = None,
-            messages = None,
-          ).asJson)
-
-        case GET -> Root / "client" / "v4" / "zones" / idFromName(_) / "dns_records" :? domainNameQueryParamMatcher(_) +& typeQueryParamMatcher("CNAME") =>
-            Ok(PagedResponseDTO(
-              result = List.empty[DnsRecordDTO],
-              success = true,
-              errors = None,
-              messages = None,
-              result_info = ResultInfoDTO(
-                page = 1,
-                per_page = 10,
-                count = 1,
-                total_pages = 1,
-                total_count = 1,
-              ).some
-            ).asJson)
-
-        case req@POST -> Root / "client" / "v4" / "zones" / idFromName("dwolla.com") / "dns_records" =>
-          given [A: Decoder]: EntityDecoder[IO, A] = jsonOf[IO, A]
-
-          for
-            dto <- req.as[DnsRecordDTO]
-            _ <- Trace[IO].put("received" -> dto)
-            resp <- Ok(ResponseDTO(
-              result = dto.copy(id = idFromName(dto.name).some).some,
-              success = true,
-              errors = None,
-              messages = None,
-            ).asJson)
-          yield resp
-      }
-
-      client = NatchezMiddleware.client(Client.fromHttpApp(entryPoint.liftRoutes((cloudflare) <+> fakeCloudFormation.routes).orNotFound))
-
+      client = NatchezMiddleware.client(fakeCloudFormation.client)
       mockKms = new KMSGen.Constant[Kind1[IO]#toKind5](IO.stub) {
         override def decrypt(ciphertextBlob: CiphertextType,
                              encryptionContext: Option[Map[EncryptionContextKey, EncryptionContextValue]],
@@ -282,7 +224,13 @@ class UpdateCloudflareSpec extends CatsEffectSuite {
           DecryptResponse(plaintext = PlaintextType(ciphertextBlob.value).some).pure[IO]
       }
 
-      handler = CloudflareDnsRecordHandler.buildHandler(entryPoint, client, mockKms)
+      mockDnsRecordClient = new DnsRecordClientStub(Stream.raiseError[IO](new NotImplementedError)) {
+        override def getExistingDnsRecords(name: String, content: Option[String], recordType: Option[String]): Stream[IO, IdentifiedDnsRecord] = Stream.empty
+        override def createDnsRecord(record: UnidentifiedDnsRecord): Stream[IO, IdentifiedDnsRecord] =
+          Stream.emit(record.identifyAs(ZoneId(idFromName("dwolla.com")), ResourceId(idFromName(record.name))))
+      }
+
+      handler = CloudflareDnsRecordHandler.buildHandler(entryPoint, client, mockKms)(_ => mockDnsRecordClient)
       request <- buildRequest(
         requestType = CloudFormationRequestType.CreateRequest,
         physicalResourceId = None,

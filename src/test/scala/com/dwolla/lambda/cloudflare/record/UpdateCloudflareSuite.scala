@@ -43,7 +43,7 @@ class UpdateCloudflareSuite extends CatsEffectSuite {
     implicit val loggerFactory: LoggerFactory[IO] = ConsoleLoggerFactory.create[IO]
     implicit val trace: Trace[IO] = natchez.Trace.Implicits.noop
 
-    val handler = new CloudflareDnsRecordHandler[IO](dummyClient, failingKms)
+    val handler = new CloudflareDnsRecordHandler[IO](dummyClient, failingKms, DnsRecordClient(_))
 
     val input = DnsRecordWithCredentials(
       dnsRecord = UnidentifiedDnsRecord(
