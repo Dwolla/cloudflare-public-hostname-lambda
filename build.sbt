@@ -2,8 +2,21 @@ evictionErrorLevel := Level.Warn
 
 ThisBuild / organization := "Dwolla"
 ThisBuild / homepage := Option(url("https://github.com/Dwolla/cloudflare-public-hostname-lambda"))
+ThisBuild / licenses += ("MIT", url("http://opensource.org/licenses/MIT"))
 ThisBuild / scalaVersion := "3.7.3"
+ThisBuild / developers := List(
+  Developer(
+    "bpholt",
+    "Brian Holt",
+    "bholt+github@dwolla.com",
+    url("https://dwolla.com")
+  ),
+)
 ThisBuild / resolvers += Resolver.sonatypeCentralSnapshots
+ThisBuild / mergifyStewardConfig ~= { _.map {
+  _.withAuthor("dwolla-oss-scala-steward[bot]")
+    .withMergeMinors(true)
+}}
 
 lazy val `cloudflare-public-hostname-lambda` = project
   .in(file("."))
