@@ -84,7 +84,7 @@ class UpdateCloudflareSuite extends CatsEffectSuite {
       proxied = Option(true)
     )
 
-    val fakeCloudflareClient: FakeDnsRecordClient = new FakeDnsRecordClient {
+    val fakeCloudflareClient = new DnsRecordClientStub(Stream.raiseError[IO](new NotImplementedError)) {
       override def createDnsRecord(record: UnidentifiedDnsRecord): Stream[IO, IdentifiedDnsRecord] =
         if (record == inputRecord) Stream.emit(expectedRecord)
         else Stream.raiseError[IO](new RuntimeException(s"unexpected argument: $record"))
@@ -137,7 +137,7 @@ class UpdateCloudflareSuite extends CatsEffectSuite {
 
     val expectedRecord = existingRecord.copy(content = "new-example.dwollalabs.com")
 
-    val fakeCloudflareClient = new FakeDnsRecordClient {
+    val fakeCloudflareClient = new DnsRecordClientStub(Stream.raiseError[IO](new NotImplementedError)) {
       override def updateDnsRecord(record: IdentifiedDnsRecord): Stream[IO, IdentifiedDnsRecord] =
         if (inputRecord.identifyAs(physicalResourceId).contains(record)) Stream.emit(expectedRecord)
         else Stream.raiseError[IO](new RuntimeException(s"unexpected argument: $record"))
@@ -172,7 +172,7 @@ class UpdateCloudflareSuite extends CatsEffectSuite {
     )
     val existingRecord = inputRecord.identifyAs(physicalResourceId)
 
-    val fakeDnsRecordClient: FakeDnsRecordClient = new FakeDnsRecordClient {
+    val fakeDnsRecordClient = new DnsRecordClientStub(Stream.raiseError[IO](new NotImplementedError)) {
       override def getByUri(uri: String): Stream[IO, IdentifiedDnsRecord] =
         Stream.emit(existingRecord).unNone
 
