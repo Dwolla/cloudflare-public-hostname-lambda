@@ -1,7 +1,5 @@
 package com.dwolla.lambda.cloudflare.record
 
-import fs2.*
-import cats.effect.*
 import com.dwolla.cloudflare.*
 import com.dwolla.cloudflare.domain.model.*
 import org.typelevel.scalaccompat.annotation.targetName3

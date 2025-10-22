@@ -35,7 +35,8 @@ lazy val `cloudflare-public-hostname-lambda` = project
         "org.scalameta" %%% "munit" % "1.2.0" % Test,
         "org.scalameta" %%% "munit-scalacheck" % "1.2.0" % Test,
         "org.typelevel" %%% "scalacheck-effect-munit" % "2.1.0-RC1" % Test,
-        "org.tpolecat" %%% "natchez-testkit" % "0.3.8",
+        "org.tpolecat" %%% "natchez-testkit" % "0.3.8" % Test,
+        "org.typelevel" %%% "log4cats-testing" % "2.7.1" % Test,
       )
     },
     buildInfoKeys := Seq[BuildInfoKey](
