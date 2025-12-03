@@ -1,10 +1,11 @@
-addSbtPlugin("com.dwolla.sbt" %% "sbt-s3-publisher" % "1.2.0")
-addSbtPlugin("com.dwolla.sbt" %% "sbt-cloudformation-stack" % "1.2.2")
-addSbtPlugin("com.dwolla.sbt" %% "sbt-dwolla-base" % "1.2.0")
-addSbtPlugin("com.dwijnand" % "sbt-travisci" % "1.1.1")
-addSbtPlugin("com.dwolla" % "sbt-assembly-log4j2" % "1.0.0-0e5d5dd98c4c1e12ff7134536456679069c13e4d")
+addSbtPlugin("org.typelevel" % "sbt-typelevel-github-actions" % "0.8.2")
+addSbtPlugin("org.typelevel" % "sbt-typelevel-settings" % "0.8.2")
+addSbtPlugin("org.typelevel" % "sbt-typelevel-mergify" % "0.8.2")
+addSbtPlugin("org.scala-js" % "sbt-scalajs" % "1.20.1")
+addSbtPlugin("org.typelevel" % "sbt-feral-lambda" % "0.3.1")
+addSbtPlugin("com.disneystreaming.smithy4s" % "smithy4s-sbt-codegen" % "0.18.42")
+addSbtPlugin("com.eed3si9n" % "sbt-buildinfo" % "0.12.0")
 
-resolvers ++= Seq(
-  Resolver.bintrayIvyRepo("dwolla", "sbt-plugins"),
-  Resolver.bintrayRepo("dwolla", "maven")
+libraryDependencies ++= Seq(
+  "software.amazon.awscdk" % "aws-cdk-lib" % "2.220.0",
 )
