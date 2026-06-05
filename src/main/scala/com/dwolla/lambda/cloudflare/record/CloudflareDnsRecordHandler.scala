@@ -136,8 +136,14 @@ object CloudflareDnsRecordHandler extends IOLambda[CloudFormationCustomResourceR
     implicit inv =>
       given KernelSource[CloudFormationCustomResourceRequest[DnsRecordWithCredentials]] = KernelSource.emptyKernelSource
 
-      TracedHandler(entryPoint):
-        CloudFormationCustomResource(client, new CloudflareDnsRecordHandler(client, kms, dnsRecordClient))
+      TracedHandler(
+        entryPoint,
+        Kleisli { (span: Span[F]) =>
+          summon[Local[F, Span[F]]].scope {
+            CloudFormationCustomResource(client, new CloudflareDnsRecordHandler(client, kms, dnsRecordClient))
+          }(span)
+        }
+      )
 
 }
 

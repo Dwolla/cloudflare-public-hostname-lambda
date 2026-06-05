@@ -5,7 +5,7 @@ evictionErrorLevel := Level.Warn
 ThisBuild / organization := "Dwolla"
 ThisBuild / homepage := Option(url("https://github.com/Dwolla/cloudflare-public-hostname-lambda"))
 ThisBuild / licenses += ("MIT", url("http://opensource.org/licenses/MIT"))
-ThisBuild / scalaVersion := "3.7.3"
+ThisBuild / scalaVersion := "3.7.4"
 ThisBuild / developers := List(
   Developer(
     "bpholt",
@@ -31,9 +31,9 @@ lazy val `cloudflare-public-hostname-lambda` = project
     dependencyOverrides += "org.scala-lang" %% "scala3-library" % scalaVersion.value,
     libraryDependencies ++= {
       Seq(
-        "org.typelevel" %%% "feral-lambda-cloudformation-custom-resource" % "0.3.1-68-4c217bd-20251016T232327Z-SNAPSHOT",
+        "org.typelevel" %%% "feral-lambda-cloudformation-custom-resource" % "0.3.1",
         "org.typelevel" %%% "cats-tagless-core" % "0.16.3",
-        "com.dwolla" %%% "cloudflare-api-client" % "4.0-827c1e4-SNAPSHOT",
+        "com.dwolla" %%% "cloudflare-api-client" % "4.0-e2f7bfc-SNAPSHOT",
         "com.dwolla" %%% "natchez-tagless" % "0.2.6",
         "com.disneystreaming.smithy4s" %%% "smithy4s-cats" % smithy4sVersion.value,
         "com.disneystreaming.smithy4s" %%% "smithy4s-http4s" % smithy4sVersion.value,
