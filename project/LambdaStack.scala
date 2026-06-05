@@ -22,11 +22,17 @@ object LambdaStack {
       .region(region)
       .build()
 
+    val lambdaStackProps = StackProps
+      .builder()
+      .env(environment)
+      .description("cloudflare-public-hostname-lambda lambda function and supporting resources")
+      .build()
+
     App.Builder.create()
       .outdir(outputDir.getPath)
       .build()
       .tap {
-        new LambdaStack(_, "cloudflare-public-hostname-lambda", StackProps.builder().env(environment).build())(name, handler, assets)
+        new LambdaStack(_, "cloudflare-public-hostname-lambda", lambdaStackProps)(name, handler, assets)
       }
   }
 
