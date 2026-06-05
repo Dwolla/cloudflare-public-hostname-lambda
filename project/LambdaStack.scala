@@ -12,24 +12,19 @@ object LambdaStack {
   def apply(name: String,
             handler: String,
             assets: File,
+            account: String,
+            region: String,
+            outputDir: File = new File("cdk.out"),
            ): App = {
     val environment = Environment
       .builder()
-      .account(
-        sys.env.getOrElse(
-          "CDK_DEFAULT_ACCOUNT",
-          throw new IllegalArgumentException("No default account found")
-        )
-      )
-      .region(
-        sys.env.getOrElse(
-          "CDK_DEFAULT_REGION",
-          throw new IllegalArgumentException("No default region found")
-        )
-      )
+      .account(account)
+      .region(region)
       .build()
 
-    new App()
+    App.Builder.create()
+      .outdir(outputDir.getPath)
+      .build()
       .tap {
         new LambdaStack(_, "cloudflare-public-hostname-lambda", StackProps.builder().env(environment).build())(name, handler, assets)
       }
