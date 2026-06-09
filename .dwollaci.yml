@@ -18,4 +18,6 @@ stages:
   deployProd:
     nodeLabel: nvm-sbt-deployer
     steps:
-      - ./deploy.sh
+      - |
+        ./deploy.sh
+        

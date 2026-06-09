@@ -13,13 +13,46 @@ sbt clean 'testOnly -- timefactor 10' 'stack/testOnly -- timefactor 10' stack/it
 
 ## Deploy
 
-To deploy the stack, ensure the required IAM roles exist (`DataEncrypter` and `cloudformation/deployer/cloudformation-deployer`), then deploy with `sbt`:
+This project uses the [AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/home.html) to
+synthesize and deploy the Lambda and its CloudFormation stack. The commands below are
+provided by the `CdkDeployPlugin` sbt plugin, which drives the CDK CLI via
+`npx --yes aws-cdk@2` — so a local Node.js/npm is required, but the CDK CLI itself does
+not need to be installed globally.
+
+### Commands
+
+| Command | Description | AWS credentials |
+|---------|-------------|-----------------|
+| `sbt cdkSynth` | Builds the Lambda artifact and synthesizes the CloudFormation template to `target/cdk.out`. Makes no AWS calls. | Not required |
+| `sbt 'cdkDiff <stage>'` | Synthesizes the stack and shows the diff against what is currently deployed. | Required |
+| `sbt 'show deploy <stage>'` | Synthesizes and deploys the stack to AWS. | Required |
+
+`<stage>` is one of `Admin` or `Sandbox` (case-insensitive).
+
+### Target account & region
+
+`cdkDiff` and `deploy` resolve the target environment from two environment variables and
+confirm it against your ambient AWS credentials. Both must be set to real values before
+deploying or diffing:
 
 ```ShellSession
-sbt -DAWS_ACCOUNT_ID={your-account-id} publish stack/deploy
+export CDK_DEPLOY_ACCOUNT=
+export CDK_DEPLOY_REGION=us-west-2
+sbt 'show deploy Admin'
 ```
 
-The `publish` task comes from [Dwolla’s S3 sbt plugin](https://github.com/Dwolla/sbt-s3-publisher), and the stack/deploy task comes from [Dwolla’s CloudFormation sbt plugin](https://github.com/Dwolla/sbt-cloudformation-stack).
+`cdkSynth` makes no AWS calls, so it falls back to placeholder values when these are
+unset. The target account must have been bootstrapped for the CDK (`cdk bootstrap`) once
+before the first deploy.
+
+### Deploy gating & output
+
+The `deploy` task only deploys when the current build's version matches the latest git
+tag on `HEAD`; otherwise it is a no-op and reports `SkippedBecauseVersionIsNotLatestTag`.
+Wrapping the task in sbt's [`show`](https://www.scala-sbt.org/1.x/docs/Inspecting-Settings.html#show)
+prints the resulting outcome (`Success` or `Skipped…`) to the build log.
+
+In CI, deploys run automatically from the `deployProd` stage in [`.dwollaci.yml`](.dwollaci.yml).
 
 ## CloudFormation Custom Resource
 

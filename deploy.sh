@@ -44,6 +44,5 @@ sdk env install use
 
 set -o xtrace -o nounset -o pipefail
 npm install -g npm
-npm install -g serverless
 
 sbt "show deploy Admin"
