@@ -1,77 +1,66 @@
-lazy val commonSettings = Seq(
-  organization := "Dwolla",
-  homepage := Option(url("https://stash.dwolla.net/projects/OPS/repos/cloudflare-public-hostname-lambda")),
+import org.typelevel.sbt.gha.WorkflowStep
+
+evictionErrorLevel := Level.Warn
+
+ThisBuild / organization := "Dwolla"
+ThisBuild / homepage := Option(url("https://github.com/Dwolla/cloudflare-public-hostname-lambda"))
+ThisBuild / licenses += ("MIT", url("http://opensource.org/licenses/MIT"))
+ThisBuild / scalaVersion := "3.7.4"
+ThisBuild / developers := List(
+  Developer(
+    "bpholt",
+    "Brian Holt",
+    "bholt+github@dwolla.com",
+    url("https://dwolla.com")
+  ),
 )
+ThisBuild / resolvers += Resolver.sonatypeCentralSnapshots
+ThisBuild / mergifyStewardConfig ~= { _.map {
+  _.withAuthor("dwolla-oss-scala-steward[bot]")
+    .withMergeMinors(true)
+}}
+ThisBuild / githubWorkflowPublishTargetBranches := Seq.empty
+ThisBuild / githubWorkflowBuild += WorkflowStep.Sbt(List("npmPackage"), name = Some("Package"))
 
-lazy val specs2Version = "4.3.0"
-lazy val awsSdkVersion = "1.11.475"
-
-lazy val `cloudflare-public-hostname-lambda` = (project in file("."))
+lazy val `cloudflare-public-hostname-lambda` = project
+  .in(file("."))
   .settings(
     name := "cloudflare-public-hostname-lambda",
-    resolvers ++= Seq(
-      Resolver.bintrayRepo("dwolla", "maven")
-    ),
+    smithy4sAwsSpecs ++= Seq(AWS.kms),
+    scalacOptions += "-Wconf:src=src_managed/.*:s",
+    dependencyOverrides += "org.scala-lang" %% "scala3-library" % scalaVersion.value,
     libraryDependencies ++= {
-      val fs2AwsVersion = "1.3.0"
-
       Seq(
-        "com.dwolla" %% "scala-cloudformation-custom-resource" % "2.1.0",
-        "com.dwolla" %% "fs2-aws" % fs2AwsVersion,
-        "io.circe" %% "circe-fs2" % "0.9.0",
-        "com.dwolla" %% "cloudflare-api-client" % "4.0.0-M4",
-        "org.http4s" %% "http4s-blaze-client" % "0.18.21",
-        "com.amazonaws" % "aws-java-sdk-kms" % awsSdkVersion,
-        "org.apache.httpcomponents" % "httpclient" % "4.5.2",
-        "org.specs2" %% "specs2-core" % specs2Version % Test,
-        "org.specs2" %% "specs2-mock" % specs2Version % Test,
-        "org.specs2" %% "specs2-matcher-extra" % specs2Version % Test,
-        "com.dwolla" %% "testutils-specs2" % "1.11.0" % Test exclude("ch.qos.logback", "logback-classic"),
-        "com.dwolla" %% "fs2-aws-testkit" % fs2AwsVersion % Test,
+        "org.typelevel" %%% "feral-lambda-cloudformation-custom-resource" % "0.3.1",
+        "org.typelevel" %%% "cats-tagless-core" % "0.16.3",
+        "com.dwolla" %%% "cloudflare-api-client" % "4.0-e2f7bfc-SNAPSHOT",
+        "com.dwolla" %%% "natchez-tagless" % "0.2.6",
+        "com.disneystreaming.smithy4s" %%% "smithy4s-cats" % smithy4sVersion.value,
+        "com.disneystreaming.smithy4s" %%% "smithy4s-http4s" % smithy4sVersion.value,
+        "com.disneystreaming.smithy4s" %%% "smithy4s-aws-http4s" % smithy4sVersion.value,
+        "com.disneystreaming.smithy4s" %%% "smithy4s-json" % smithy4sVersion.value,
+        "org.http4s" %%% "http4s-ember-client" % "0.23.30",
+        "org.typelevel" %%% "mouse" % "1.3.2",
+        "org.tpolecat" %%% "natchez-mtl" % "0.3.8",
+        "org.tpolecat" %%% "natchez-xray" % "0.3.8",
+        "org.tpolecat" %%% "natchez-http4s" % "0.6.1",
+        "org.tpolecat" %%% "natchez-http4s-mtl" % "0.6.1",
+        "org.typelevel" %%% "log4cats-core" % "2.7.1",
+        "org.typelevel" %%% "log4cats-js-console" % "2.7.1",
+        "com.github.plokhotnyuk.jsoniter-scala" %%% "jsoniter-scala-circe" % "2.38.0",
+        "org.typelevel" %%% "munit-cats-effect" % "2.1.0" % Test,
+        "org.scalameta" %%% "munit" % "1.2.0" % Test,
+        "org.scalameta" %%% "munit-scalacheck" % "1.2.0" % Test,
+        "org.typelevel" %%% "scalacheck-effect-munit" % "2.1.0-RC1" % Test,
+        "org.tpolecat" %%% "natchez-testkit" % "0.3.8" % Test,
+        "org.typelevel" %%% "log4cats-testing" % "2.7.1" % Test,
       )
     },
-    updateOptions := updateOptions.value.withCachedResolution(false),
-  )
-  .settings(commonSettings: _*)
-  .configs(IntegrationTest)
-  .settings(Defaults.itSettings: _*)
-  .enablePlugins(PublishToS3)
-
-lazy val stack: Project = (project in file("stack"))
-  .settings(commonSettings: _*)
-  .settings(
-    resolvers ++= Seq(Resolver.jcenterRepo),
-    libraryDependencies ++= {
-      val scalaAwsUtilsVersion = "1.6.1"
-
-      Seq(
-        "com.monsanto.arch" %% "cloud-formation-template-generator" % "3.5.4",
-        "org.specs2" %% "specs2-core" % specs2Version % "test,it",
-        "com.amazonaws" % "aws-java-sdk-cloudformation" % awsSdkVersion % IntegrationTest,
-        "com.dwolla" %% "scala-aws-utils" % scalaAwsUtilsVersion % IntegrationTest,
-      )
-    },
-    stackName := (name in `cloudflare-public-hostname-lambda`).value,
-    stackParameters := List(
-      "S3Bucket" → (s3Bucket in `cloudflare-public-hostname-lambda`).value,
-      "S3Key" → (s3Key in `cloudflare-public-hostname-lambda`).value
+    buildInfoKeys := Seq[BuildInfoKey](
+      name,
+      version,
     ),
-    awsAccountId := sys.props.get("AWS_ACCOUNT_ID"),
-    awsRoleName := Option("cloudformation/deployer/cloudformation-deployer"),
-    scalacOptions --= Seq(
-      "-Xlint:missing-interpolator",
-      "-Xlint:option-implicit",
-    ),
-  )
-  .configs(IntegrationTest)
-  .settings(Defaults.itSettings: _*)
-  .enablePlugins(CloudFormationStack)
-  .dependsOn(`cloudflare-public-hostname-lambda`)
+    buildInfoPackage := "com.dwolla.lambda.cloudflare.record",
 
-assemblyMergeStrategy in assembly := {
-  case PathList(ps @ _*) if ps.last == "Log4j2Plugins.dat" => sbtassembly.Log4j2MergeStrategy.plugincache
-  case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
-  case PathList("log4j2.xml") => MergeStrategy.singleOrError
-  case _ ⇒ MergeStrategy.first
-}
-test in assembly := {}
+  )
+  .enablePlugins(BuildInfoPlugin, CdkDeployPlugin, LambdaJSPlugin, Smithy4sCodegenPlugin)

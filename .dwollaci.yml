@@ -1,0 +1,23 @@
+stages:
+  enableCD: true
+  build:
+    nodeLabel: sbt
+    steps:
+      - |
+        export SDKMAN_DIR="$HOME/.sdkman"
+        mkdir -p "${SDKMAN_DIR}/candidates/java/current/bin"
+        set +o xtrace
+        . "${SDKMAN_DIR}/bin/sdkman-init.sh"
+        sdk env install use
+        set -o xtrace
+        sbt test
+        sbt doc
+        sbt npmPackage
+    filesToStash:
+      - '**'
+  deployProd:
+    nodeLabel: nvm-sbt-deployer
+    steps:
+      - |
+        ./deploy.sh
+        
