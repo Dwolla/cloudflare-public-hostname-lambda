@@ -1,10 +1,8 @@
 stages:
   enableCD: true
   build:
-    # nvm-sbt rather than sbt: the Scala.js test suite runs on node.
     nodeLabel: nvm-sbt
     steps:
-      # Jenkins' durable shell is /bin/sh; sdkman-init.sh uses `source`, so run under bash.
       - |
         exec bash <<'JENKINS_BUILD'
         set +o xtrace
