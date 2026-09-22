@@ -104,7 +104,7 @@ class LambdaStack(scope: Construct,
   // Safety: the deployed key policy grants the cloudformation-deployer role full KMS
   // management (CloudFormationDeploymentRoleOwnsKey). Keep it until the new pipeline's deploy
   // principal is confirmed, so we don't lock future updates out of the key.
-  kmsKey.grant(new ArnPrincipal(Fn.sub("arn:aws:iam::$${AWS::AccountId}:role/cloudformation/deployer/cloudformation-deployer")),
+  kmsKey.grant(new ArnPrincipal(Fn.sub("arn:aws:iam::${AWS::AccountId}:role/cloudformation/deployer/cloudformation-deployer")),
     "kms:Create*",
     "kms:Describe*",
     "kms:Enable*",
