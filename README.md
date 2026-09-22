@@ -53,7 +53,6 @@ Wrapping the task in sbt's [`show`](https://www.scala-sbt.org/1.x/docs/Inspectin
 prints the resulting outcome (`Success` or `Skipped…`) to the build log.
 
 In CI, deploys run automatically from the `deployProd` stage in [`.dwollaci.yml`](.dwollaci.yml).
-
 ## CloudFormation Custom Resource
 
 Here is an example of how to include this as a custom resource in a CloudFormation stack.
