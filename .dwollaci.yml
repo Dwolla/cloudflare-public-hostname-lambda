@@ -1,0 +1,27 @@
+stages:
+  enableCD: true
+  build:
+    nodeLabel: nvm-sbt
+    steps:
+      - |
+        exec bash <<'JENKINS_BUILD'
+        set +o xtrace
+        . "${NVM_DIR}/nvm.sh" --no-use
+        nvm install
+        export SDKMAN_DIR="$HOME/.sdkman"
+        mkdir -p "${SDKMAN_DIR}/candidates/java/current/bin"
+        source "${SDKMAN_DIR}/bin/sdkman-init.sh"
+        sdk env install use
+        set -o xtrace
+        sbt test
+        sbt doc
+        sbt npmPackage
+        JENKINS_BUILD
+    filesToStash:
+      - '**'
+  deployProd:
+    nodeLabel: nvm-sbt-deployer
+    steps:
+      - |
+        ./deploy.sh
+        
