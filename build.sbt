@@ -29,11 +29,14 @@ lazy val `cloudflare-public-hostname-lambda` = project
     smithy4sAwsSpecs ++= Seq(AWS.kms),
     scalacOptions += "-Wconf:src=src_managed/.*:s",
     dependencyOverrides += "org.scala-lang" %% "scala3-library" % scalaVersion.value,
+    // cloudflare-api-client pulls a natchez-tagless snapshot that Sonatype has since purged;
+    // pin to the newest snapshot still published until both libraries cut real releases.
+    dependencyOverrides += "com.dwolla" %%% "natchez-tagless" % "0.2.6-207-6985d03-SNAPSHOT",
     libraryDependencies ++= {
       Seq(
         "org.typelevel" %%% "feral-lambda-cloudformation-custom-resource" % "0.3.1",
         "org.typelevel" %%% "cats-tagless-core" % "0.16.3",
-        "com.dwolla" %%% "cloudflare-api-client" % "4.0-e2f7bfc-SNAPSHOT",
+        "com.dwolla" %%% "cloudflare-api-client" % "4.0-c64d591-SNAPSHOT",
         "com.dwolla" %%% "natchez-tagless" % "0.2.6",
         "com.disneystreaming.smithy4s" %%% "smithy4s-cats" % smithy4sVersion.value,
         "com.disneystreaming.smithy4s" %%% "smithy4s-http4s" % smithy4sVersion.value,
