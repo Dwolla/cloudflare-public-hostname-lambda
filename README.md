@@ -21,6 +21,8 @@ sbt -DAWS_ACCOUNT_ID={your-account-id} publish stack/deploy
 
 The `publish` task comes from [Dwolla’s S3 sbt plugin](https://github.com/Dwolla/sbt-s3-publisher), and the stack/deploy task comes from [Dwolla’s CloudFormation sbt plugin](https://github.com/Dwolla/sbt-cloudformation-stack).
 
+The generated template sets the Lambda **`Runtime` to `java21`**. Build and publish the assembly with a **JDK that matches** what you intend to run on Lambda (JDK 21 recommended).
+
 ## CloudFormation Custom Resource
 
 Here is an example of how to include this as a custom resource in a CloudFormation stack.

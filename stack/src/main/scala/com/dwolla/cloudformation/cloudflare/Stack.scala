@@ -103,7 +103,7 @@ object Stack {
       ),
       Description = Option("Creates or updates a public hostname at Cloudflare zone"),
       Handler = classOf[CloudflareDnsRecordHandler].getName,
-      Runtime = Java8,
+      Runtime = LambdaRuntimeJava21,
       MemorySize = Some(512),
       Role = `Fn::GetAtt`(Seq(role.name, "Arn")),
       Timeout = Option(60)
